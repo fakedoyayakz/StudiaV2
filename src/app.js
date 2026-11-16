@@ -77,6 +77,8 @@ let selectedUserIds = new Set();
 let editingTeacherSubjectsId = null;
 let schools = [];
 let schoolSubjects = [];
+let schoolPeriods = [];
+let schoolPeriodsError = '';
 let subjectSchoolId = '';
 let devDiagnostics = null;
 let devAuditLogs = [];
@@ -88,7 +90,6 @@ let authMode = 'closed'; // 'login', 'register' or 'closed'
 let labBookings = [];
 let labFilters = { date: '', labId: 'all', teacher: '' };
 let reportWeek = 'all';
-let reportTurno = 'matutino';
 let reportTeacher = 'all';
 let schoolName = 'COLÉGIO ESTADUAL PROF. JÚLIO SZYMANSKI - MATUTINO';
 let currentRelatorioSubTab = 'urania';
@@ -292,10 +293,10 @@ const getWeeksList = () => {
   return Array.from(weeks).sort().reverse();
 };
 
-const getDetectedSlots = () => {
+const getDetectedSlots = (scheduleList = schedules) => {
   const slots = new Set();
-  schedules.forEach(s => {
-    if (s.startTime) slots.add(s.startTime);
+  scheduleList.forEach(s => {
+    if (s.startTime) slots.add(String(s.startTime).slice(0, 5));
   });
   return Array.from(slots).sort();
 };
@@ -358,18 +359,6 @@ const abbreviateReportEntry = entry => {
   return formattedEntry.split(' - ').map((part, index) => (
     index === 0 && formattedEntry.includes(' - ') ? part : abbreviateReportSubject(part)
   )).join(' - ');
-};
-
-// Helper function to determine if a start time belongs to a specific turno
-const isSlotsMatchTurno = (startTime, turno) => {
-  if (turno === 'matutino') {
-    return startTime >= '07:00' && startTime < '12:00';
-  } else if (turno === 'vespertino') {
-    return startTime >= '12:00' && startTime < '18:00';
-  } else if (turno === 'noturno') {
-    return startTime >= '18:00' && startTime < '23:00';
-  }
-  return true; // 'auto' or unknown
 };
 
 const TeacherScheduleCard = (teacher, weekSchedules, slots, model = 'prof_turma') => {
@@ -768,17 +757,8 @@ const LandingView = () => `
 `;
 
 const TeacherView = () => {
-  const detectedSlots = getDetectedSlots();
-  let slots = [];
-  if (reportTurno === 'matutino') {
-    slots = ['07:30', '08:20', '09:10', '10:15', '11:00', '11:45'];
-  } else if (reportTurno === 'vespertino') {
-    slots = ['13:00', '13:50', '14:40', '15:45', '16:30', '17:15'];
-  } else if (reportTurno === 'noturno') {
-    slots = ['18:45', '19:30', '20:30', '21:15', '22:00'];
-  } else {
-    slots = detectedSlots.length > 0 ? detectedSlots : ['07:30', '08:20', '09:10', '10:15', '11:00', '11:45'];
-  }
+  const teacherSchedules = schedules.filter(s => s.teacherId === user.uid);
+  const slots = getDetectedSlots(teacherSchedules);
 
   const teacherNavItems = [
     { id: 'horarios', icon: 'calendar', label: 'Meus Horários' },
@@ -830,15 +810,10 @@ const TeacherView = () => {
           ${teacherSchedulesTab === 'grid' ? `
             <!-- Grid Control Box -->
             <div class="bg-white p-6 rounded-3xl border shadow-sm space-y-4 print:hidden">
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="space-y-1">
-                  <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Turno / Períodos</label>
-                  <select onchange="actions.setReportTurno(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    <option value="matutino" ${reportTurno === 'matutino' ? 'selected' : ''}>Manhã (07:30 - 11:45)</option>
-                    <option value="vespertino" ${reportTurno === 'vespertino' ? 'selected' : ''}>Tarde (13:00 - 17:15)</option>
-                    <option value="noturno" ${reportTurno === 'noturno' ? 'selected' : ''}>Noite (18:45 - 22:45)</option>
-                    <option value="auto" ${reportTurno === 'auto' ? 'selected' : ''}>Auto-detecção</option>
-                  </select>
+                  <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Horários da escola</label>
+                  <p class="rounded-lg bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600">A grade usa os horários das suas aulas cadastradas.</p>
                 </div>
 
                 <div class="space-y-1">
@@ -892,7 +867,7 @@ const TeacherView = () => {
               <div class="flex justify-center">
                 <div class="w-full max-w-2xl overflow-x-auto pb-4 scrollbar-none">
                   <div class="min-w-[550px]">
-                    ${TeacherScheduleCard(user, schedules.filter(s => s.teacherId === user.uid), slots)}
+                    ${TeacherScheduleCard(user, teacherSchedules, slots)}
                   </div>
                 </div>
               </div>
@@ -951,42 +926,121 @@ const getAssignedSubjectsForTeacher = (teacherId) => {
 };
 
 const CreateModal = () => `
-  <!-- Same Create Modal logic but with current state -->
   <div id="create-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
     <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="actions.hideCreateModal()"></div>
-    <div class="bg-white w-full max-w-lg rounded-3xl p-8 relative z-10 shadow-2xl">
-      <h3 class="text-2xl font-bold mb-8">Novo Agendamento</h3>
+    <div class="bg-white w-full max-w-2xl rounded-3xl p-6 md:p-8 relative z-10 shadow-2xl max-h-[92vh] overflow-y-auto">
+      <h3 class="text-2xl font-bold mb-6">Montar horário</h3>
       <form onsubmit="actions.createSchedule(event)" class="space-y-4">
-        <div class="grid grid-cols-2 gap-4">
-          <input type="text" id="form-subject" list="form-subject-options" placeholder="Selecione ou digite a matéria" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
-          <datalist id="form-subject-options"></datalist>
-          <input type="text" id="form-class-group" placeholder="Turma (ex: 9A, 3BI)" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
-        </div>
-        <div class="grid grid-cols-2 gap-4">
-          <input type="date" id="form-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
-          <input type="text" id="form-room" placeholder="Sala" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
-        </div>
-        <div class="grid grid-cols-2 gap-4">
-          <input type="time" id="form-start" oninput="actions.updateConsecutiveSchedulePreview()" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" value="18:45" required>
-          <input type="time" id="form-end" oninput="actions.updateConsecutiveSchedulePreview()" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" value="22:45" required>
-        </div>
-        <div class="rounded-xl border border-slate-200 p-3">
-          <label class="flex cursor-pointer items-center gap-2 text-sm font-bold text-slate-700">
-            <input type="checkbox" id="form-double-lesson" onchange="actions.updateConsecutiveSchedulePreview()" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-            Duas aulas seguidas
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label class="space-y-1">
+            <span class="text-xs font-bold uppercase text-slate-500">Matéria</span>
+            <input type="text" id="form-subject" list="form-subject-options" placeholder="Selecione ou digite a matéria" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
+            <datalist id="form-subject-options"></datalist>
           </label>
-          <p class="mt-1 pl-6 text-xs font-medium text-slate-500">O segundo horário começa quando o primeiro termina e terá a mesma duração.</p>
-          <p id="form-double-lesson-preview" class="mt-2 hidden pl-6 text-xs font-bold text-blue-700"></p>
+          <label class="space-y-1">
+            <span class="text-xs font-bold uppercase text-slate-500">Turma</span>
+            <input type="text" id="form-class-group" placeholder="Ex: 9A, 3BI" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
+          </label>
         </div>
-        <select id="form-teacher" onchange="actions.updateScheduleSubjectOptions(this.value)" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
-          <option value="">Selecione o Professor</option>
-          ${teachers.map(t => `<option value="${t.uid}">${t.displayName}</option>`).join('')}
-        </select>
-        <div class="flex gap-4 pt-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label class="space-y-1">
+            <span class="text-xs font-bold uppercase text-slate-500">Sala</span>
+            <input type="text" id="form-room" placeholder="Sala" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
+          </label>
+          <label class="space-y-1">
+            <span class="text-xs font-bold uppercase text-slate-500">Professor</span>
+            <select id="form-teacher" onchange="actions.updateScheduleSubjectOptions(this.value)" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
+              <option value="">Selecione o Professor</option>
+              ${teachers.map(t => `<option value="${t.uid}">${t.displayName}</option>`).join('')}
+            </select>
+          </label>
+        </div>
+        <label class="block space-y-1">
+          <span class="text-xs font-bold uppercase text-slate-500">Tipo de agendamento</span>
+          <select id="form-schedule-mode" onchange="actions.setScheduleCreateMode(this.value)" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm text-slate-900">
+            <option value="weekly" selected>Repetir semanalmente no período</option>
+            <option value="single">Somente uma data</option>
+          </select>
+        </label>
+        <div id="form-weekly-fields" class="space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label class="space-y-1">
+              <span class="text-xs font-bold uppercase text-slate-500">Data inicial</span>
+              <input type="date" id="form-start-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm text-slate-900" required>
+            </label>
+            <label class="space-y-1">
+              <span class="text-xs font-bold uppercase text-slate-500">Data final</span>
+              <input type="date" id="form-end-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm text-slate-900" required>
+            </label>
+          </div>
+          <fieldset class="rounded-xl border border-slate-200 p-3">
+            <legend class="px-1 text-xs font-bold uppercase text-slate-500">Dias da semana</legend>
+            <div class="flex flex-wrap gap-3">
+              ${[['1', 'Segunda'], ['2', 'Terça'], ['3', 'Quarta'], ['4', 'Quinta'], ['5', 'Sexta']].map(([value, label]) => `
+                <label class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input type="checkbox" name="form-weekday" value="${value}" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"> ${label}
+                </label>
+              `).join('')}
+            </div>
+          </fieldset>
+        </div>
+        <div id="form-single-date-field" class="hidden">
+          <label class="block space-y-1">
+            <span class="text-xs font-bold uppercase text-slate-500">Data da aula</span>
+            <input type="date" id="form-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm text-slate-900">
+          </label>
+        </div>
+        <fieldset class="rounded-xl border border-slate-200 p-3">
+          <legend class="px-1 text-xs font-bold uppercase text-slate-500">Períodos da aula</legend>
+          ${schoolPeriods.length ? `
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              ${schoolPeriods.map(period => `
+                <label class="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 p-2.5 text-sm font-semibold text-slate-700">
+                  <input type="checkbox" name="form-period" value="${period.periodNumber}" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                  <span>${period.name} (${String(period.startTime).slice(0, 5)}–${String(period.endTime).slice(0, 5)})</span>
+                </label>
+              `).join('')}
+            </div>
+          ` : '<p class="text-sm font-medium text-amber-700">A direção precisa cadastrar os períodos da escola antes de criar horários.</p>'}
+        </fieldset>
+        <div class="flex gap-4 pt-2">
           <button type="button" onclick="actions.hideCreateModal()" class="flex-1 py-2.5 border border-slate-200 rounded-lg font-bold hover:bg-slate-50 transition-all text-slate-700">Cancelar</button>
-          <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-bold shadow-md transition-all">Criar Horário</button>
+          <button type="submit" ${schoolPeriods.length ? '' : 'disabled'} class="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white py-2.5 rounded-lg font-bold shadow-md transition-all">Gerar horários</button>
         </div>
       </form>
+    </div>
+  </div>
+`;
+
+const SchoolPeriodsModal = () => `
+  <div id="school-periods-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="actions.hideSchoolPeriodsModal()"></div>
+    <div class="bg-white w-full max-w-2xl rounded-3xl p-6 md:p-8 relative z-10 shadow-2xl max-h-[92vh] overflow-y-auto">
+      <div class="flex items-start justify-between gap-4 mb-6">
+        <div>
+          <h3 class="text-2xl font-bold">Períodos da escola</h3>
+          <p class="mt-1 text-sm text-slate-500">Configure uma vez os horários que serão usados nas grades.</p>
+        </div>
+        <button type="button" onclick="actions.hideSchoolPeriodsModal()" class="rounded-lg p-2 text-slate-500 hover:bg-slate-100" aria-label="Fechar">✕</button>
+      </div>
+      ${schoolPeriodsError ? `<p class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">${schoolPeriodsError}</p>` : ''}
+      <form onsubmit="actions.saveSchoolPeriod(event)" class="grid grid-cols-1 sm:grid-cols-4 gap-3 rounded-xl bg-slate-50 p-4">
+        <input id="period-name" type="text" placeholder="Nome (ex.: 1ª aula)" class="sm:col-span-2 w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm" required>
+        <input id="period-start" type="time" class="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm" required>
+        <input id="period-end" type="time" class="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm" required>
+        <button type="submit" class="sm:col-span-4 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Adicionar período</button>
+      </form>
+      <div class="mt-5 space-y-3">
+        ${schoolPeriods.map(period => `
+          <form onsubmit="actions.updateSchoolPeriod(event, ${period.id})" class="grid grid-cols-1 sm:grid-cols-[1fr_125px_125px_auto_auto] items-center gap-2 rounded-xl border border-slate-200 p-3">
+            <input id="period-name-${period.id}" type="text" value="${period.name}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Nome do período" required>
+            <input id="period-start-${period.id}" type="time" value="${String(period.startTime).slice(0, 5)}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Início" required>
+            <input id="period-end-${period.id}" type="time" value="${String(period.endTime).slice(0, 5)}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Término" required>
+            <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Salvar</button>
+            <button type="button" onclick="actions.deleteSchoolPeriod(${period.id})" class="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-600">Excluir</button>
+          </form>
+        `).join('') || '<p class="py-6 text-center text-sm font-medium text-slate-500">Nenhum período cadastrado.</p>'}
+      </div>
     </div>
   </div>
 `;
@@ -1467,6 +1521,7 @@ const DeveloperDataTab = () => `
           <option value="users">Usuários</option>
           <option value="schools">Escolas</option>
           <option value="schedules">Horários</option>
+          <option value="school_periods">Períodos escolares</option>
           <option value="lab_bookings">Reservas de laboratório</option>
           <option value="school_subjects">Matérias da escola</option>
           <option value="teacher_subjects">Vínculos de matérias</option>
@@ -1647,6 +1702,9 @@ const DiretorView = () => `
         </div>
         <div class="flex gap-2">
           ${currentTab === 'horarios' ? `
+            <button onclick="actions.showSchoolPeriodsModal()" class="bg-slate-100 text-slate-700 px-3 md:px-4 py-2 md:py-2.5 rounded-lg font-bold shadow-sm flex items-center gap-1.5 text-xs md:text-sm hover:bg-slate-200 transition-all" id="btn-diretor-periods">
+              <i data-lucide="clock-3" class="w-4 h-4"></i> <span>Períodos</span>
+            </button>
             <button onclick="actions.showCreateModal()" class="bg-blue-600 text-white px-3 md:px-6 py-2 md:py-2.5 rounded-lg font-bold shadow-md flex items-center gap-1.5 md:gap-2 text-xs md:text-sm hover:bg-blue-700 transition-all" id="btn-diretor-new">
               <i data-lucide="plus" class="w-4 h-4 md:w-5 md:h-5"></i> <span>Novo Horário</span>
             </button>
@@ -1668,6 +1726,7 @@ const DiretorView = () => `
     </main>
 
     ${CreateModal()}
+    ${SchoolPeriodsModal()}
     ${EditModal()}
     ${DeleteConfirmModal()}
     ${CreateUserModal({ viewerRole: 'diretor' })}
@@ -2189,28 +2248,7 @@ const LabsTab = () => {
 };
 
 const RelatoriosTab = () => {
-  // DEBUG LOGS
-  console.log('[DEBUG RELATÓRIO]', {
-    reportTurno,
-    reportWeek,
-    schedulesCount: schedules.length,
-    teachersCount: teachers.length,
-  });
-
   const weeks = getWeeksList();
-  const detectedSlots = getDetectedSlots();
-
-  let slots = [];
-  if (reportTurno === 'matutino') {
-    slots = ['07:30', '08:20', '09:10', '10:15', '11:00', '11:45'];
-  } else if (reportTurno === 'vespertino') {
-    slots = ['13:00', '13:50', '14:40', '15:45', '16:30', '17:15'];
-  } else if (reportTurno === 'noturno') {
-    slots = ['18:45', '19:30', '20:30', '21:15', '22:00'];
-  } else {
-    slots = detectedSlots.length > 0 ? detectedSlots : ['07:30', '08:20', '09:10', '10:15', '11:00', '11:45'];
-  }
-
   let filteredSchedules = schedules;
   if (reportWeek !== 'all') {
     filteredSchedules = schedules.filter(s => {
@@ -2221,6 +2259,7 @@ const RelatoriosTab = () => {
       }
     });
   }
+  const slots = getDetectedSlots(filteredSchedules);
 
   let displayTeachers = teachers;
   if (reportTeacher !== 'all') {
@@ -2328,7 +2367,7 @@ const RelatoriosTab = () => {
 
       <!-- Control Box -->
       <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 print:hidden">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div class="space-y-2">
             <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Nome do Colégio</label>
             <input type="text" value="${schoolName}" oninput="actions.setSchoolName(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
@@ -2339,16 +2378,6 @@ const RelatoriosTab = () => {
             <select onchange="actions.setReportWeek(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
               <option value="all" ${reportWeek === 'all' ? 'selected' : ''}>Todas as semanas (Geral Acumulada)</option>
               ${weeks.map(w => `<option value="${w}" ${reportWeek === w ? 'selected' : ''}>${getWeekRangeLabel(w)}</option>`).join('')}
-            </select>
-          </div>
-
-          <div class="space-y-2">
-            <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Turno / Períodos</label>
-            <select onchange="actions.setReportTurno(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-              <option value="matutino" ${reportTurno === 'matutino' ? 'selected' : ''}>Manhã (07:30 - 11:45)</option>
-              <option value="vespertino" ${reportTurno === 'vespertino' ? 'selected' : ''}>Tarde (13:00 - 17:15)</option>
-              <option value="noturno" ${reportTurno === 'noturno' ? 'selected' : ''}>Noite (18:45 - 22:45)</option>
-              <option value="auto" ${reportTurno === 'auto' ? 'selected' : ''}>Auto-detecção de horários</option>
             </select>
           </div>
 
@@ -2422,38 +2451,13 @@ const RelatoriosTab = () => {
               .map(s => s.classGroup)
             )].sort();
 
-            console.log('=== DEBUG RELATÓRIO TURMAS ===');
-            console.log('schedules total:', schedules.length);
-            console.log('filteredSchedules:', filteredSchedules.length);
-            console.log('reportWeek:', reportWeek);
-            console.log('reportTurno:', reportTurno);
-            if (filteredSchedules.length > 0) {
-              console.log('Sample schedule:', filteredSchedules[0]);
-              console.log('classGroup values:', filteredSchedules.map(s => s.classGroup).filter(Boolean));
-            }
-            console.log('[DEBUG TURMAS GRID]', {
-              filteredSchedulesCount: filteredSchedules.length,
-              allTurmasCount: allTurmas.length,
-              allTurmas,
-              reportTurno,
-              sampleSchedules: filteredSchedules.slice(0, 2).map(s => ({ classGroup: s.classGroup, startTime: s.startTime, status: s.status }))
-            });
-
-            // Filter turmas to only show those that have schedules for the selected turno
-            const turmas = reportTurno !== 'auto'
-              ? allTurmas.filter(turmaName => {
-                  const turmaSchedules = filteredSchedules.filter(s => s.classGroup === turmaName);
-                  const hasMatch = turmaSchedules.some(s => isSlotsMatchTurno(s.startTime, reportTurno));
-                  console.log(`[DEBUG] Turma "${turmaName}": ${turmaSchedules.length} schedules, matches=${hasMatch}`);
-                  return hasMatch;
-                })
-              : allTurmas;
+            const turmas = allTurmas;
 
             if (turmas.length === 0) {
               return `
                 <div class="text-center py-20 text-slate-400 font-bold space-y-2 col-span-full">
                   <i data-lucide="info" class="w-12 h-12 mx-auto text-slate-300 col-span-full"></i>
-                  <p>Nenhuma turma cadastrada ou detectada nos horários selecionados para o turno "${reportTurno === 'matutino' ? 'Manhã' : reportTurno === 'vespertino' ? 'Tarde' : 'Noite'}". Certifique-se de preencher o campo 'Turma' ao criar novos horários.</p>
+                  <p>Nenhuma turma encontrada nos horários selecionados. Confira a semana ou cadastre aulas para a escola.</p>
                 </div>
               `;
             }
@@ -2628,14 +2632,90 @@ const actions = {
     const modal = $('#create-modal');
     if (modal) {
       modal.classList.remove('hidden');
+      this.setScheduleCreateMode($('#form-schedule-mode')?.value || 'weekly');
       this.updateScheduleSubjectOptions($('#form-teacher')?.value || '');
       if (typeof lucide !== 'undefined') lucide.createIcons();
     }
   },
 
+  setScheduleCreateMode(mode) {
+    const isWeekly = mode === 'weekly';
+    $('#form-weekly-fields')?.classList.toggle('hidden', !isWeekly);
+    $('#form-single-date-field')?.classList.toggle('hidden', isWeekly);
+    const startDate = $('#form-start-date');
+    const endDate = $('#form-end-date');
+    const singleDate = $('#form-date');
+    if (startDate) startDate.required = isWeekly;
+    if (endDate) endDate.required = isWeekly;
+    if (singleDate) singleDate.required = !isWeekly;
+  },
+
   hideCreateModal() {
     const modal = $('#create-modal');
     if (modal) modal.classList.add('hidden');
+  },
+
+  showSchoolPeriodsModal() {
+    if (user?.role !== 'diretor') return;
+    $('#school-periods-modal')?.classList.remove('hidden');
+  },
+
+  hideSchoolPeriodsModal() {
+    $('#school-periods-modal')?.classList.add('hidden');
+  },
+
+  async saveSchoolPeriod(event) {
+    event.preventDefault();
+    const periodNumber = Math.max(0, ...schoolPeriods.map(period => Number(period.periodNumber) || 0)) + 1;
+    if (periodNumber > 30) return showDialog('A escola já possui o limite de 30 períodos.');
+
+    try {
+      await api.post('/api/school-periods', {
+        periodNumber,
+        name: $('#period-name')?.value?.trim(),
+        startTime: $('#period-start')?.value,
+        endTime: $('#period-end')?.value
+      });
+      await this.refreshData();
+      this.renderCurrentView();
+      this.showSchoolPeriodsModal();
+    } catch (err) {
+      showDialog(err.message || 'Não foi possível salvar o período.');
+    }
+  },
+
+  async updateSchoolPeriod(event, periodId) {
+    event.preventDefault();
+    try {
+      await api.patch(`/api/school-periods/${periodId}`, {
+        name: $(`#period-name-${periodId}`)?.value?.trim(),
+        startTime: $(`#period-start-${periodId}`)?.value,
+        endTime: $(`#period-end-${periodId}`)?.value
+      });
+      await this.refreshData();
+      this.renderCurrentView();
+      this.showSchoolPeriodsModal();
+    } catch (err) {
+      showDialog(err.message || 'Não foi possível atualizar o período.');
+    }
+  },
+
+  async deleteSchoolPeriod(periodId) {
+    const period = schoolPeriods.find(item => item.id === periodId);
+    const confirmed = await showDialog(
+      `Excluir o período "${period?.name || ''}"? Os horários já cadastrados não serão alterados.`,
+      { confirm: true, title: 'Excluir período' }
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/api/school-periods/${periodId}`);
+      await this.refreshData();
+      this.renderCurrentView();
+      this.showSchoolPeriodsModal();
+    } catch (err) {
+      showDialog(err.message || 'Não foi possível excluir o período.');
+    }
   },
 
   showEditModalById(id) {
@@ -2649,8 +2729,8 @@ const actions = {
       $('#edit-form-class-group').value = s.classGroup || '';
       $('#edit-form-date').value = s.date || '';
       $('#edit-form-room').value = s.room || '';
-      $('#edit-form-start').value = s.startTime || '18:45';
-      $('#edit-form-end').value = s.endTime || '22:45';
+      $('#edit-form-start').value = s.startTime || '';
+      $('#edit-form-end').value = s.endTime || '';
       $('#edit-form-teacher').value = s.teacherId || '';
       $('#edit-form-status').value = s.status || 'pending';
       this.updateScheduleSubjectOptions(s.teacherId || '', s.subject || '', 'edit-form');
@@ -2768,6 +2848,7 @@ const actions = {
         users: ['uid', 'email', 'displayName', 'role', 'school_id', 'subject'],
         schools: ['id', 'name', 'createdAt'],
         schedules: ['id', 'date', 'startTime', 'endTime', 'subject', 'room', 'teacherId', 'teacherName', 'classGroup', 'status', 'school_id'],
+        school_periods: ['id', 'school_id', 'periodNumber', 'name', 'startTime', 'endTime'],
         lab_bookings: ['id', 'labId', 'teacherId', 'teacherName', 'date', 'startTime', 'endTime'],
         school_subjects: ['id', 'school_id', 'subject'],
         teacher_subjects: ['id', 'teacher_id', 'subject_id']
@@ -2915,6 +2996,8 @@ const actions = {
     isRefreshingData = true;
     try {
       if (user.role === 'dev') {
+        schoolPeriods = [];
+        schoolPeriodsError = '';
         const results = await Promise.allSettled([
           api.get(user.school_id ? `/api/schedules?schoolId=${user.school_id}` : '/api/schedules'),
           api.get('/api/teachers'),
@@ -2945,9 +3028,18 @@ const actions = {
           api.get('/api/teachers'),
           api.get(`/api/users?schoolId=${user.school_id}`),
           api.get('/api/labs/bookings'),
-          api.get('/api/school-subjects')
+          api.get('/api/school-subjects'),
+          api.get('/api/school-periods')
         ]);
-        const [s, t, u, lb, subs] = results.map((r, i) => r.status === 'fulfilled' ? r.value : (console.error(`Data fetch #${i} failed:`, r.reason), []));
+        const [s, t, u, lb, subs] = results.slice(0, 5).map((r, i) => r.status === 'fulfilled' ? r.value : (console.error(`Data fetch #${i} failed:`, r.reason), []));
+        const periodResult = results[5];
+        schoolPeriods = periodResult.status === 'fulfilled' ? periodResult.value : [];
+        if (periodResult.status === 'rejected') {
+          console.error('School periods fetch failed:', periodResult.reason);
+          schoolPeriodsError = periodResult.reason?.message || 'Não foi possível carregar os períodos.';
+        } else {
+          schoolPeriodsError = '';
+        }
         schedules = this.normalizeSchedules(s || []);
         teachers = t || [];
         allUsers = u || [];
@@ -2960,6 +3052,8 @@ const actions = {
         };
         labBookings = lb || [];
       } else {
+        schoolPeriods = [];
+        schoolPeriodsError = '';
         const results = await Promise.allSettled([
           api.get(`/api/schedules?teacherId=${user.uid}`),
           api.get('/api/labs/bookings'),
@@ -3145,81 +3239,49 @@ const actions = {
   async createSchedule(e) {
     e.preventDefault();
     const teacherSelect = $('#form-teacher');
-    const data = {
-      subject: $('#form-subject').value,
-      classGroup: $('#form-class-group').value,
-      date: $('#form-date').value,
-      room: $('#form-room').value,
-      startTime: $('#form-start').value,
-      endTime: $('#form-end').value,
-      teacherId: teacherSelect.value,
-      teacherName: teacherSelect.options[teacherSelect.selectedIndex].text,
-      school_id: user.school_id
-    };
-    const schedulesToCreate = [data];
+    const mode = $('#form-schedule-mode')?.value || 'weekly';
+    const periodNumbers = Array.from(document.querySelectorAll('input[name="form-period"]:checked'))
+      .map(input => Number(input.value));
+    if (periodNumbers.length === 0) return showDialog('Selecione pelo menos um período.');
 
-    if ($('#form-double-lesson')?.checked) {
-      const startMinutes = this.timeToMinutes(data.startTime);
-      const endMinutes = this.timeToMinutes(data.endTime);
-      const duration = endMinutes - startMinutes;
-      const secondEndMinutes = endMinutes + duration;
-      if (duration <= 0 || secondEndMinutes >= 24 * 60) {
-        return showDialog('Confira o horário da primeira aula. A segunda aula deve terminar antes da meia-noite.');
-      }
-      schedulesToCreate.push({
-        ...data,
-        startTime: data.endTime,
-        endTime: this.minutesToTime(secondEndMinutes)
-      });
+    let startDate;
+    let endDate;
+    let weekdayNumbers;
+    if (mode === 'single') {
+      startDate = $('#form-date')?.value;
+      endDate = startDate;
+      if (!startDate) return showDialog('Informe a data da aula.');
+      const weekday = parseLocalDate(startDate).getDay();
+      if (weekday < 1 || weekday > 5) return showDialog('A data selecionada precisa ser de segunda a sexta-feira.');
+      weekdayNumbers = [weekday];
+    } else {
+      startDate = $('#form-start-date')?.value;
+      endDate = $('#form-end-date')?.value;
+      weekdayNumbers = Array.from(document.querySelectorAll('input[name="form-weekday"]:checked'))
+        .map(input => Number(input.value));
+      if (!startDate || !endDate || startDate > endDate) return showDialog('Informe um intervalo de datas válido.');
+      if (weekdayNumbers.length === 0) return showDialog('Selecione pelo menos um dia da semana.');
     }
 
+    const data = {
+      subject: $('#form-subject').value.trim(),
+      classGroup: $('#form-class-group').value.trim(),
+      room: $('#form-room').value.trim(),
+      teacherId: teacherSelect.value,
+      startDate,
+      endDate,
+      weekdayNumbers,
+      periodNumbers
+    };
+
     try {
-      for (let index = 0; index < schedulesToCreate.length; index += 1) {
-        try {
-          await api.post('/api/schedules', schedulesToCreate[index]);
-        } catch (err) {
-          if (index > 0) {
-            await this.init();
-            return showDialog(`A primeira aula foi criada, mas a segunda não pôde ser criada: ${err.message || 'erro desconhecido'}`);
-          }
-          throw err;
-        }
-      }
+      const result = await api.post('/api/schedules/recurring', data);
       this.hideCreateModal();
-      this.init();
+      await this.init();
+      showDialog(`${result.created} horário${result.created === 1 ? '' : 's'} criado${result.created === 1 ? '' : 's'} com sucesso.`);
     } catch (err) {
       showDialog(err.message || 'Erro ao criar horário.');
     }
-  },
-
-  timeToMinutes(time) {
-    const [hours, minutes] = (time || '').split(':').map(Number);
-    return Number.isFinite(hours) && Number.isFinite(minutes) ? hours * 60 + minutes : NaN;
-  },
-
-  minutesToTime(totalMinutes) {
-    const hours = String(Math.floor(totalMinutes / 60)).padStart(2, '0');
-    const minutes = String(totalMinutes % 60).padStart(2, '0');
-    return `${hours}:${minutes}`;
-  },
-
-  updateConsecutiveSchedulePreview() {
-    const checkbox = $('#form-double-lesson');
-    const preview = $('#form-double-lesson-preview');
-    if (!checkbox || !preview) return;
-    preview.classList.toggle('hidden', !checkbox.checked);
-    if (!checkbox.checked) return;
-
-    const startTime = $('#form-start')?.value;
-    const endTime = $('#form-end')?.value;
-    const startMinutes = this.timeToMinutes(startTime);
-    const endMinutes = this.timeToMinutes(endTime);
-    const duration = endMinutes - startMinutes;
-    if (duration <= 0 || endMinutes + duration >= 24 * 60) {
-      preview.textContent = 'Ajuste o primeiro horário para calcular a segunda aula.';
-      return;
-    }
-    preview.textContent = `1ª: ${startTime}–${endTime} | 2ª: ${endTime}–${this.minutesToTime(endMinutes + duration)}`;
   },
 
   async updateSchedule(e) {
@@ -3322,11 +3384,6 @@ const actions = {
 
   setReportWeek(val) {
     reportWeek = val;
-    this.renderCurrentView();
-  },
-
-  setReportTurno(val) {
-    reportTurno = val;
     this.renderCurrentView();
   },
 
@@ -3477,17 +3534,7 @@ const actions = {
       currentDisplayTeachers = extracted;
     }
 
-    let slots = [];
-    if (reportTurno === 'matutino') {
-      slots = ['07:30', '08:20', '09:10', '10:15', '11:00', '11:45'];
-    } else if (reportTurno === 'vespertino') {
-      slots = ['13:00', '13:50', '14:40', '15:45', '16:30', '17:15'];
-    } else if (reportTurno === 'noturno') {
-      slots = ['18:45', '19:30', '20:30', '21:15', '22:00'];
-    } else {
-      const detectedSlots = getDetectedSlots();
-      slots = detectedSlots.length > 0 ? detectedSlots : ['07:30', '08:20', '09:10', '10:15', '11:00', '11:45'];
-    }
+    const slots = getDetectedSlots(filteredSchedules);
 
     let items = [];
     const isTurma = reportModel === 'turma_grid';

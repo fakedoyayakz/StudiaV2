@@ -1,6 +1,6 @@
 -- Studia Schema
--- This is the base schema. Apply migrations/001 through migrations/008 in order
--- to reach the current multi-school schema and subject catalog model.
+-- This is the base schema. Apply migrations/001 through migrations/009 in order
+-- to reach the current multi-school schema, subject catalog, and school periods.
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (

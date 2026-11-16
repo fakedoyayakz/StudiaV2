@@ -32,6 +32,9 @@ const PORT = Number(process.env.PORT) || 3000;
 const columnMap: {[key: string]: string} = {
   starttime: 'startTime',
   endtime: 'endTime',
+  period_number: 'periodNumber',
+  start_time: 'startTime',
+  end_time: 'endTime',
   teacherid: 'teacherId',
   teachername: 'teacherName',
   classgroup: 'classGroup',
@@ -59,6 +62,23 @@ const sanitizeString = (str: string): string => {
   if (!str) return '';
   return str.trim().replace(/[<>\"']/g, '').substring(0, 255);
 };
+
+const isValidDateOnly = (value: unknown): value is string => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+};
+
+const isValidTime = (value: unknown): value is string =>
+  typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value);
+
+const timeToMinutes = (value: string): number => {
+  const [hours, minutes] = value.split(':').map(Number);
+  return hours * 60 + minutes;
+};
+
+const doesTimeOverlap = (startA: string, endA: string, startB: string, endB: string): boolean =>
+  timeToMinutes(startA) < timeToMinutes(endB) && timeToMinutes(endA) > timeToMinutes(startB);
 
 const sanitizeEmail = (email: string): string => {
   if (!email) return '';
@@ -802,11 +822,278 @@ const requireRole = async (req: any, res: any, allowedRoles: AppRole[]): Promise
   return userInfo;
 };
 
+const getSchoolIdForPeriods = (req: any, res: any, userInfo: UserInfo): string | null => {
+  if (userInfo.role === 'diretor') {
+    if (req.query.schoolId && req.query.schoolId !== userInfo.school_id) {
+      res.status(403).json({ error: 'Acesso negado' });
+      return null;
+    }
+    if (!userInfo.school_id) {
+      res.status(400).json({ error: 'Associe sua conta a uma escola antes de configurar os períodos.' });
+      return null;
+    }
+    return userInfo.school_id;
+  }
+
+  const schoolId = req.query.schoolId || req.body?.schoolId;
+  if (userInfo.role !== 'dev' || typeof schoolId !== 'string' || !schoolId) {
+    res.status(400).json({ error: 'Informe uma escola válida.' });
+    return null;
+  }
+  return schoolId;
+};
+
+app.get('/api/school-periods', async (req, res) => {
+  const userInfo = await requireRole(req, res, ['dev', 'diretor']);
+  if (!userInfo) return;
+  const schoolId = getSchoolIdForPeriods(req, res, userInfo);
+  if (!schoolId) return;
+
+  const { data, error } = await supabase
+    .from('school_periods')
+    .select('id,school_id,period_number,name,start_time,end_time')
+    .eq('school_id', schoolId)
+    .order('period_number', { ascending: true });
+  if (error) return res.status(500).json({ error: 'Erro ao buscar os períodos. Confira se a migração 009 foi aplicada no Supabase.' });
+  res.json(transformKeys(data));
+});
+
+app.post('/api/school-periods', async (req, res) => {
+  const userInfo = await requireRole(req, res, ['dev', 'diretor']);
+  if (!userInfo) return;
+  const schoolId = getSchoolIdForPeriods(req, res, userInfo);
+  if (!schoolId) return;
+
+  const periodNumber = Number(req.body?.periodNumber);
+  const name = sanitizeString(req.body?.name || '');
+  const startTime = req.body?.startTime;
+  const endTime = req.body?.endTime;
+  if (!Number.isInteger(periodNumber) || periodNumber < 1 || periodNumber > 30 || !name || !isValidTime(startTime) || !isValidTime(endTime) || timeToMinutes(startTime) >= timeToMinutes(endTime)) {
+    return res.status(400).json({ error: 'Informe nome, ordem e um intervalo de horário válido para o período.' });
+  }
+
+  const { data: existingPeriods, error: existingError } = await supabase
+    .from('school_periods')
+    .select('period_number,start_time,end_time')
+    .eq('school_id', schoolId);
+  if (existingError) return res.status(500).json({ error: 'Erro ao validar os períodos existentes.' });
+  const overlap = (existingPeriods || []).find(period =>
+    period.period_number !== periodNumber &&
+    doesTimeOverlap(startTime, endTime, period.start_time, period.end_time)
+  );
+  if (overlap) return res.status(409).json({ error: `Este horário se sobrepõe ao período ${overlap.period_number}.` });
+
+  const { data, error } = await supabase
+    .from('school_periods')
+    .upsert(
+      { school_id: schoolId, period_number: periodNumber, name, start_time: startTime, end_time: endTime },
+      { onConflict: 'school_id,period_number' }
+    )
+    .select('id,school_id,period_number,name,start_time,end_time')
+    .single();
+  if (error) return res.status(500).json({ error: 'Erro ao salvar o período.' });
+  res.json(transformKeys(data));
+});
+
+app.patch('/api/school-periods/:id', async (req, res) => {
+  const userInfo = await requireRole(req, res, ['dev', 'diretor']);
+  if (!userInfo) return;
+  const schoolId = getSchoolIdForPeriods(req, res, userInfo);
+  if (!schoolId) return;
+  const periodId = Number(req.params.id);
+  if (!Number.isInteger(periodId) || periodId < 1) return res.status(400).json({ error: 'Período inválido.' });
+
+  const { data: current, error: currentError } = await supabase
+    .from('school_periods')
+    .select('id,period_number')
+    .eq('id', periodId)
+    .eq('school_id', schoolId)
+    .maybeSingle();
+  if (currentError) return res.status(500).json({ error: 'Erro ao verificar o período.' });
+  if (!current) return res.status(404).json({ error: 'Período não encontrado nesta escola.' });
+
+  const name = sanitizeString(req.body?.name || '');
+  const startTime = req.body?.startTime;
+  const endTime = req.body?.endTime;
+  if (!name || !isValidTime(startTime) || !isValidTime(endTime) || timeToMinutes(startTime) >= timeToMinutes(endTime)) {
+    return res.status(400).json({ error: 'Informe nome e um intervalo de horário válido para o período.' });
+  }
+
+  const { data: otherPeriods, error: otherError } = await supabase
+    .from('school_periods')
+    .select('period_number,start_time,end_time')
+    .eq('school_id', schoolId)
+    .neq('id', periodId);
+  if (otherError) return res.status(500).json({ error: 'Erro ao validar os períodos existentes.' });
+  const overlap = (otherPeriods || []).find(period => doesTimeOverlap(startTime, endTime, period.start_time, period.end_time));
+  if (overlap) return res.status(409).json({ error: `Este horário se sobrepõe ao período ${overlap.period_number}.` });
+
+  const { data, error } = await supabase
+    .from('school_periods')
+    .update({ name, start_time: startTime, end_time: endTime })
+    .eq('id', periodId)
+    .eq('school_id', schoolId)
+    .select('id,school_id,period_number,name,start_time,end_time')
+    .single();
+  if (error) return res.status(500).json({ error: 'Erro ao atualizar o período.' });
+  res.json(transformKeys(data));
+});
+
+app.delete('/api/school-periods/:id', async (req, res) => {
+  const userInfo = await requireRole(req, res, ['dev', 'diretor']);
+  if (!userInfo) return;
+  const schoolId = getSchoolIdForPeriods(req, res, userInfo);
+  if (!schoolId) return;
+  const periodId = Number(req.params.id);
+  if (!Number.isInteger(periodId) || periodId < 1) return res.status(400).json({ error: 'Período inválido.' });
+
+  const { error, count } = await supabase
+    .from('school_periods')
+    .delete({ count: 'exact' })
+    .eq('id', periodId)
+    .eq('school_id', schoolId);
+  if (error) return res.status(500).json({ error: 'Erro ao excluir o período.' });
+  if (count === 0) return res.status(404).json({ error: 'Período não encontrado nesta escola.' });
+  res.json({ status: 'success' });
+});
+
+app.post('/api/schedules/recurring', async (req, res) => {
+  const userInfo = await requireRole(req, res, ['diretor']);
+  if (!userInfo) return;
+  if (!userInfo.school_id) return res.status(400).json({ error: 'Associe sua conta a uma escola antes de criar horários.' });
+
+  const { startDate, endDate, weekdayNumbers, periodNumbers } = req.body || {};
+  const subject = sanitizeString(req.body?.subject || '');
+  const classGroup = sanitizeString(req.body?.classGroup || '');
+  const room = sanitizeString(req.body?.room || '');
+  const teacherId = typeof req.body?.teacherId === 'string' ? req.body.teacherId : '';
+  if (!isValidDateOnly(startDate) || !isValidDateOnly(endDate) || startDate > endDate) {
+    return res.status(400).json({ error: 'Informe um intervalo de datas válido.' });
+  }
+  const daySpan = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) / 86400000;
+  if (daySpan > 365) return res.status(400).json({ error: 'O intervalo máximo para gerar horários é de um ano.' });
+  if (!Array.isArray(weekdayNumbers) || weekdayNumbers.length === 0 ||
+      weekdayNumbers.some(day => !Number.isInteger(day) || day < 1 || day > 5) ||
+      new Set(weekdayNumbers).size !== weekdayNumbers.length) {
+    return res.status(400).json({ error: 'Selecione pelo menos um dia útil da semana.' });
+  }
+  if (!Array.isArray(periodNumbers) || periodNumbers.length === 0 ||
+      periodNumbers.some(period => !Number.isInteger(period) || period < 1 || period > 30) ||
+      new Set(periodNumbers).size !== periodNumbers.length || periodNumbers.length > 10) {
+    return res.status(400).json({ error: 'Selecione ao menos um período válido.' });
+  }
+  if (!subject || !classGroup || !room || !teacherId) {
+    return res.status(400).json({ error: 'Preencha matéria, turma, sala e professor.' });
+  }
+
+  const teacher = await getUserFromDB(teacherId);
+  if (!teacher || teacher.role !== 'teacher' || teacher.school_id !== userInfo.school_id) {
+    return res.status(403).json({ error: 'O horário deve pertencer a um professor da sua escola.' });
+  }
+
+  const { data: selectedPeriods, error: periodsError } = await supabase
+    .from('school_periods')
+    .select('period_number,name,start_time,end_time')
+    .eq('school_id', userInfo.school_id)
+    .in('period_number', periodNumbers)
+    .order('period_number', { ascending: true });
+  if (periodsError) return res.status(500).json({ error: 'Erro ao buscar os períodos da escola.' });
+  if (!selectedPeriods || selectedPeriods.length !== periodNumbers.length) {
+    return res.status(400).json({ error: 'Um ou mais períodos selecionados não pertencem à sua escola.' });
+  }
+  for (let index = 1; index < selectedPeriods.length; index += 1) {
+    const previous = selectedPeriods[index - 1];
+    const current = selectedPeriods[index];
+    if (doesTimeOverlap(previous.start_time, previous.end_time, current.start_time, current.end_time)) {
+      return res.status(409).json({ error: 'Os períodos selecionados possuem horários sobrepostos. Revise a configuração da escola.' });
+    }
+  }
+
+  const entries: Array<Record<string, string>> = [];
+  const cursor = new Date(`${startDate}T00:00:00Z`);
+  const finalDate = new Date(`${endDate}T00:00:00Z`);
+  while (cursor <= finalDate) {
+    const weekday = cursor.getUTCDay();
+    if (weekdayNumbers.includes(weekday)) {
+      const date = cursor.toISOString().slice(0, 10);
+      selectedPeriods.forEach(period => entries.push({
+        date,
+        starttime: period.start_time,
+        endtime: period.end_time,
+        subject,
+        room,
+        teacherid: teacherId,
+        teachername: teacher.displayname || '',
+        classgroup: classGroup,
+        status: 'pending',
+        school_id: userInfo.school_id!
+      }));
+    }
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  if (entries.length === 0) return res.status(400).json({ error: 'Nenhum dia selecionado cai dentro do intervalo informado.' });
+
+  type ExistingSchedule = {
+    id: number;
+    date: string;
+    starttime: string;
+    endtime: string;
+    teacherid: string;
+    classgroup: string | null;
+    room: string | null;
+  };
+  const existingSchedules: ExistingSchedule[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data: page, error: schedulesError } = await supabase
+      .from('schedules')
+      .select('id,date,starttime,endtime,teacherid,classgroup,room')
+      .eq('school_id', userInfo.school_id)
+      .gte('date', startDate)
+      .lte('date', endDate)
+      .order('id', { ascending: true })
+      .range(offset, offset + 999);
+    if (schedulesError) return res.status(500).json({ error: 'Erro ao validar conflitos nos horários existentes.' });
+    existingSchedules.push(...(page || []));
+    if (!page || page.length < 1000) break;
+  }
+
+  const byDate = new Map<string, ExistingSchedule[]>();
+  let hasInvalidExistingTime = false;
+  existingSchedules.forEach(schedule => {
+    if (!isValidTime(schedule.starttime) || !isValidTime(schedule.endtime)) {
+      hasInvalidExistingTime = true;
+      return;
+    }
+    const daySchedules = byDate.get(schedule.date) || [];
+    daySchedules.push(schedule);
+    byDate.set(schedule.date, daySchedules);
+  });
+  if (hasInvalidExistingTime) {
+    return res.status(500).json({ error: 'Não foi possível validar conflitos porque há horários cadastrados com horas inválidas.' });
+  }
+  for (const entry of entries) {
+    const conflict = (byDate.get(entry.date) || []).find(schedule => {
+      const sameTeacher = schedule.teacherid === teacherId;
+      const sameClass = String(schedule.classgroup || '').trim().toLocaleLowerCase() === classGroup.toLocaleLowerCase();
+      const sameRoom = Boolean(room && String(schedule.room || '').trim().toLocaleLowerCase() === room.toLocaleLowerCase());
+      return (sameTeacher || sameClass || sameRoom) &&
+        doesTimeOverlap(entry.starttime, entry.endtime, schedule.starttime, schedule.endtime);
+    });
+    if (conflict) {
+      return res.status(409).json({ error: `Conflito de horário em ${entry.date}, das ${entry.starttime.slice(0, 5)} às ${entry.endtime.slice(0, 5)}. Nenhuma aula foi criada.` });
+    }
+  }
+
+  const { error } = await supabase.from('schedules').insert(entries);
+  if (error) return res.status(500).json({ error: 'Não foi possível gerar os horários. Nenhuma aula foi criada.' });
+  res.json({ status: 'success', created: entries.length });
+});
+
 app.get('/api/dev/diagnostics', async (req, res) => {
   const userInfo = await requireRole(req, res, ['dev']);
   if (!userInfo) return;
 
-  const tables = ['users', 'schools', 'schedules', 'lab_bookings', 'school_subjects', 'teacher_subjects'] as const;
+  const tables = ['users', 'schools', 'schedules', 'school_periods', 'lab_bookings', 'school_subjects', 'teacher_subjects'] as const;
   const probes = await Promise.all(tables.map(async table => {
     const startedAt = Date.now();
     const { count, error } = await supabase.from(table).select('*', { count: 'exact', head: true });
@@ -871,6 +1158,7 @@ app.get('/api/dev/export/:resource', async (req, res) => {
     users: 'uid,email,displayname,role,school_id,subject',
     schools: 'id,name,createdat',
     schedules: 'id,date,starttime,endtime,subject,room,teacherid,teachername,classgroup,status,school_id',
+    school_periods: 'id,school_id,period_number,name,start_time,end_time',
     lab_bookings: 'id,labid,teacherid,teachername,date,starttime,endtime',
     school_subjects: 'id,school_id,subject',
     teacher_subjects: 'id,teacher_id,subject_id'

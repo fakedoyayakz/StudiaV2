@@ -4,13 +4,15 @@ Sistema de gestão escolar para organizar horários de aula e reservas de labora
 
 ## Funcionalidades principais
 
-- **Horários**: cadastro, edição e exclusão de aulas (matéria, turma, sala, data/horário, professor), com status pendente, confirmado ou ausente.
+- **Horários**: a direção configura os períodos da própria escola e gera aulas por dias da semana dentro de um intervalo de datas. Os cartões e PDFs usam os horários cadastrados, sem turnos fixos.
 - **Laboratórios**: reservas de Informática ou Química, agenda compartilhada por escola, filtros por data/laboratório/professor e validação de conflitos.
 - **Usuários**: cadastro de contas (professor/direção pedagógica/desenvolvedor), gestão de perfis e exclusão de usuários.
-- **Relatórios**: grade de horários em PDF por professor ou por turma, com filtros de semana, turno e tamanho de card, além de um gráfico simples de frequência.
+- **Relatórios**: grade de horários em PDF por professor ou por turma, com filtros de semana e tamanho de card, além de um gráfico simples de frequência.
 - **Área do desenvolvedor**: reúne a gestão global de escolas e usuários, monitoramento, diagnóstico, logs, auditoria e ferramentas de exportação. Diretores e professores têm acesso limitado à própria escola ou aos próprios dados.
 
 O fluxo de atestados foi removido; a migração não apaga os registros históricos existentes. A migração `008_remove_vacant_status_and_validate_lab_bookings.sql` converte horários antigos com status `vaga` para `confirmed` e restringe os status disponíveis.
+
+Para horários personalizados, aplique também `migrations/009_school_periods.sql` no SQL Editor do Supabase. Depois, a direção cadastra os períodos em **Horários → Períodos**; as aulas podem ser repetidas nos dias selecionados entre as datas inicial e final.
 
 ## Stack
 
