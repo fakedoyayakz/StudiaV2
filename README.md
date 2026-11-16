@@ -12,7 +12,7 @@ Sistema de gestão escolar para organizar horários de aula e reservas de labora
 
 O fluxo de atestados foi removido; a migração não apaga os registros históricos existentes. A migração `008_remove_vacant_status_and_validate_lab_bookings.sql` converte horários antigos com status `vaga` para `confirmed` e restringe os status disponíveis.
 
-Para horários personalizados, aplique também `migrations/009_school_periods.sql` no SQL Editor do Supabase. Depois, a direção cadastra os períodos em **Horários → Períodos**; as aulas podem ser repetidas nos dias selecionados entre as datas inicial e final.
+Para horários personalizados, aplique `migrations/009_school_periods.sql` e `migrations/010_separate_schedule_shifts.sql` no SQL Editor do Supabase, nessa ordem. A direção configura períodos separados para manhã, tarde e noite em **Horários → Períodos**. Manhã e tarde aceitam até a 6ª aula; ao gerar horários, selecione os dias da semana em que os períodos escolhidos — inclusive a 6ª aula — devem ocorrer.
 
 ## Stack
 

@@ -56,7 +56,7 @@ Nenhuma rota valida token/sessão do chamador — a API confia em quem fizer a r
 | Rota | O que faz |
 |---|---|
 | `GET /api/school-periods` | Lista os períodos cadastrados para a escola da direção autenticada. |
-| `POST /api/school-periods` | Cria ou substitui um período da escola após validar o intervalo e evitar sobreposição. |
+| `POST /api/school-periods` | Cria ou substitui um período da escola/turno após validar o intervalo e evitar sobreposição. |
 | `PATCH /api/school-periods/:id` / `DELETE /api/school-periods/:id` | Atualiza ou remove um período pertencente à escola da direção. |
 | `POST /api/auth/register` | Cria usuário no Supabase Auth (`admin.createUser`) e depois insere a linha correspondente em `users`. Se a inserção falhar, deleta o usuário de Auth para não deixar órfão. `role` vindo do corpo é ignorado — a conta é sempre criada como `teacher` (ver §9.1). |
 | `POST /api/auth/login` | Autentica com `supabaseAuth.auth.signInWithPassword`, depois busca a linha em `users` pelo `uid` e devolve esse registro (é o que vira `user` no frontend). |
@@ -93,11 +93,11 @@ A aplicação não oferece envio, consulta ou aprovação de atestados. A tabela
 ## 6. Horários e Laboratórios
 
 ### Horários
-- A direção configura períodos por escola (`/api/school-periods`) e pode gerar aulas para dias da semana e intervalo de datas (`POST /api/schedules/recurring`). O servidor valida escola, períodos e conflitos antes de inserir o lote.
+- A direção configura períodos por escola e turno (`manha`, `tarde`, `noite`) em `/api/school-periods`; manhã e tarde permitem até seis períodos. Pode gerar aulas para dias da semana e intervalo de datas (`POST /api/schedules/recurring`), selecionando turno, dias e períodos. O servidor valida escola, turno, períodos e conflitos antes de inserir o lote.
 - Também é possível criar uma aula em uma única data a partir dos períodos configurados. Edição e exclusão continuam disponíveis por registro.
 - Status possíveis: `pending` (padrão ao criar), `confirmed` e `absent`. A migração 008 converte os registros antigos `vaga` para `confirmed` e remove esse status.
 - O professor só visualiza os próprios horários, em formato de grade semanal (`TeacherScheduleCard`) calculada a partir do dia da semana de cada `date` e dos horários realmente cadastrados.
-- Os relatórios e PDFs também detectam os horários nos registros selecionados; não há turnos fixos pré-definidos.
+- Os relatórios e PDFs detectam os horários nos registros do turno selecionado; os períodos e horários são definidos por cada escola.
 
 ### Laboratórios
 - Dois tipos fixos, fixos no código (não configuráveis pela UI): `info` (Informática) e `chem` (Química).

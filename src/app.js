@@ -79,6 +79,7 @@ let schools = [];
 let schoolSubjects = [];
 let schoolPeriods = [];
 let schoolPeriodsError = '';
+let periodAdminTurno = 'manha';
 let subjectSchoolId = '';
 let devDiagnostics = null;
 let devAuditLogs = [];
@@ -90,6 +91,9 @@ let authMode = 'closed'; // 'login', 'register' or 'closed'
 let labBookings = [];
 let labFilters = { date: '', labId: 'all', teacher: '' };
 let reportWeek = 'all';
+let reportTurno = 'todos';
+let scheduleListTurno = 'todos';
+let teacherTurno = 'todos';
 let reportTeacher = 'all';
 let schoolName = 'COLÉGIO ESTADUAL PROF. JÚLIO SZYMANSKI - MATUTINO';
 let currentRelatorioSubTab = 'urania';
@@ -300,6 +304,19 @@ const getDetectedSlots = (scheduleList = schedules) => {
   });
   return Array.from(slots).sort();
 };
+
+const getScheduleTurno = schedule => {
+  if (['manha', 'tarde', 'noite'].includes(schedule.turno)) return schedule.turno;
+  const startTime = String(schedule.startTime || '').slice(0, 5);
+  if (startTime >= '05:00' && startTime < '12:00') return 'manha';
+  if (startTime >= '12:00' && startTime < '18:00') return 'tarde';
+  return 'noite';
+};
+
+const filterSchedulesByTurno = (scheduleList, turno) =>
+  turno === 'todos' ? scheduleList : scheduleList.filter(schedule => getScheduleTurno(schedule) === turno);
+
+const TURNO_LABELS = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite' };
 
 const getDetectedTurmas = (filteredSchedules) => {
   const turmas = new Set();
@@ -757,7 +774,10 @@ const LandingView = () => `
 `;
 
 const TeacherView = () => {
-  const teacherSchedules = schedules.filter(s => s.teacherId === user.uid);
+  const teacherSchedules = filterSchedulesByTurno(
+    schedules.filter(s => s.teacherId === user.uid),
+    teacherTurno
+  );
   const slots = getDetectedSlots(teacherSchedules);
 
   const teacherNavItems = [
@@ -812,8 +832,13 @@ const TeacherView = () => {
             <div class="bg-white p-6 rounded-3xl border shadow-sm space-y-4 print:hidden">
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div class="space-y-1">
-                  <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Horários da escola</label>
-                  <p class="rounded-lg bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600">A grade usa os horários das suas aulas cadastradas.</p>
+                  <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Turno da grade</label>
+                  <select onchange="actions.setTeacherTurno(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    <option value="todos" ${teacherTurno === 'todos' ? 'selected' : ''}>Todos os turnos</option>
+                    <option value="manha" ${teacherTurno === 'manha' ? 'selected' : ''}>Manhã</option>
+                    <option value="tarde" ${teacherTurno === 'tarde' ? 'selected' : ''}>Tarde</option>
+                    <option value="noite" ${teacherTurno === 'noite' ? 'selected' : ''}>Noite</option>
+                  </select>
                 </div>
 
                 <div class="space-y-1">
@@ -925,6 +950,20 @@ const getAssignedSubjectsForTeacher = (teacherId) => {
     .map(subject => subject.subject);
 };
 
+const SchedulePeriodOptions = turno => {
+  const periods = schoolPeriods.filter(period => period.turno === turno);
+  return periods.length ? `
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      ${periods.map(period => `
+        <label class="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 p-2.5 text-sm font-semibold text-slate-700">
+          <input type="checkbox" name="form-period" value="${period.periodNumber}" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+          <span>${period.name} (${String(period.startTime).slice(0, 5)}–${String(period.endTime).slice(0, 5)})</span>
+        </label>
+      `).join('')}
+    </div>
+  ` : '<p class="text-sm font-medium text-amber-700">Cadastre os períodos deste turno em Horários → Períodos.</p>';
+};
+
 const CreateModal = () => `
   <div id="create-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
     <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onclick="actions.hideCreateModal()"></div>
@@ -990,18 +1029,18 @@ const CreateModal = () => `
             <input type="date" id="form-date" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm text-slate-900">
           </label>
         </div>
+        <label class="block space-y-1">
+          <span class="text-xs font-bold uppercase text-slate-500">Turno</span>
+          <select id="form-turno" onchange="actions.setScheduleTurno(this.value)" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm text-slate-900">
+            <option value="manha">Manhã</option>
+            <option value="tarde">Tarde</option>
+            <option value="noite">Noite</option>
+          </select>
+        </label>
         <fieldset class="rounded-xl border border-slate-200 p-3">
           <legend class="px-1 text-xs font-bold uppercase text-slate-500">Períodos da aula</legend>
-          ${schoolPeriods.length ? `
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              ${schoolPeriods.map(period => `
-                <label class="flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 p-2.5 text-sm font-semibold text-slate-700">
-                  <input type="checkbox" name="form-period" value="${period.periodNumber}" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                  <span>${period.name} (${String(period.startTime).slice(0, 5)}–${String(period.endTime).slice(0, 5)})</span>
-                </label>
-              `).join('')}
-            </div>
-          ` : '<p class="text-sm font-medium text-amber-700">A direção precisa cadastrar os períodos da escola antes de criar horários.</p>'}
+          <div id="form-period-options">${SchedulePeriodOptions('manha')}</div>
+          <p class="mt-2 text-xs text-slate-500">A 6ª aula será criada somente nos dias da semana que você selecionar acima.</p>
         </fieldset>
         <div class="flex gap-4 pt-2">
           <button type="button" onclick="actions.hideCreateModal()" class="flex-1 py-2.5 border border-slate-200 rounded-lg font-bold hover:bg-slate-50 transition-all text-slate-700">Cancelar</button>
@@ -1025,21 +1064,34 @@ const SchoolPeriodsModal = () => `
       </div>
       ${schoolPeriodsError ? `<p class="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-800">${schoolPeriodsError}</p>` : ''}
       <form onsubmit="actions.saveSchoolPeriod(event)" class="grid grid-cols-1 sm:grid-cols-4 gap-3 rounded-xl bg-slate-50 p-4">
+        <select id="period-turno" onchange="actions.setPeriodAdminTurno(this.value)" class="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm" aria-label="Turno do período">
+          <option value="manha" ${periodAdminTurno === 'manha' ? 'selected' : ''}>Manhã</option>
+          <option value="tarde" ${periodAdminTurno === 'tarde' ? 'selected' : ''}>Tarde</option>
+          <option value="noite" ${periodAdminTurno === 'noite' ? 'selected' : ''}>Noite</option>
+        </select>
         <input id="period-name" type="text" placeholder="Nome (ex.: 1ª aula)" class="sm:col-span-2 w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm" required>
         <input id="period-start" type="time" class="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm" required>
         <input id="period-end" type="time" class="w-full rounded-lg border border-slate-200 bg-white p-2.5 text-sm" required>
-        <button type="submit" class="sm:col-span-4 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Adicionar período</button>
+        <button type="submit" class="sm:col-span-4 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-blue-700">Adicionar ao turno selecionado</button>
       </form>
-      <div class="mt-5 space-y-3">
-        ${schoolPeriods.map(period => `
-          <form onsubmit="actions.updateSchoolPeriod(event, ${period.id})" class="grid grid-cols-1 sm:grid-cols-[1fr_125px_125px_auto_auto] items-center gap-2 rounded-xl border border-slate-200 p-3">
-            <input id="period-name-${period.id}" type="text" value="${period.name}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Nome do período" required>
-            <input id="period-start-${period.id}" type="time" value="${String(period.startTime).slice(0, 5)}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Início" required>
-            <input id="period-end-${period.id}" type="time" value="${String(period.endTime).slice(0, 5)}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Término" required>
-            <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Salvar</button>
-            <button type="button" onclick="actions.deleteSchoolPeriod(${period.id})" class="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-600">Excluir</button>
-          </form>
-        `).join('') || '<p class="py-6 text-center text-sm font-medium text-slate-500">Nenhum período cadastrado.</p>'}
+      <div class="mt-5 space-y-6">
+        ${['manha', 'tarde', 'noite'].map(turno => {
+          const periods = schoolPeriods.filter(period => period.turno === turno);
+          return `
+            <section class="space-y-3">
+              <h4 class="text-sm font-black uppercase tracking-wide text-slate-700">${TURNO_LABELS[turno]} <span class="font-medium normal-case text-slate-400">${turno !== 'noite' ? '(até 6 aulas)' : '(até 5 aulas)'}</span></h4>
+              ${periods.map(period => `
+                <form onsubmit="actions.updateSchoolPeriod(event, ${period.id})" class="grid grid-cols-1 sm:grid-cols-[1fr_125px_125px_auto_auto] items-center gap-2 rounded-xl border border-slate-200 p-3">
+                  <input id="period-name-${period.id}" type="text" value="${period.name}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Nome do período" required>
+                  <input id="period-start-${period.id}" type="time" value="${String(period.startTime).slice(0, 5)}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Início" required>
+                  <input id="period-end-${period.id}" type="time" value="${String(period.endTime).slice(0, 5)}" class="w-full rounded-lg border border-slate-200 p-2 text-sm" aria-label="Término" required>
+                  <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white">Salvar</button>
+                  <button type="button" onclick="actions.deleteSchoolPeriod(${period.id})" class="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-600">Excluir</button>
+                </form>
+              `).join('') || '<p class="rounded-lg bg-slate-50 p-3 text-sm text-slate-400">Nenhum período cadastrado neste turno.</p>'}
+            </section>
+          `;
+        }).join('')}
       </div>
     </div>
   </div>
@@ -1073,6 +1125,14 @@ const EditModal = () => `
             <input type="text" id="edit-form-room" placeholder="Sala" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent text-slate-900" required>
           </div>
         </div>
+        <label class="block">
+          <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Turno</span>
+          <select id="edit-form-turno" class="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-lg outline-none font-medium text-sm text-slate-900" required>
+            <option value="manha">Manhã</option>
+            <option value="tarde">Tarde</option>
+            <option value="noite">Noite</option>
+          </select>
+        </label>
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Hora Início</label>
@@ -2006,13 +2066,25 @@ const EscolasTab = () => `
 `;
 
 const HorariosTab = () => `
-  <h3 class="text-2xl font-black text-slate-900 print:mb-4">Grade de Horários</h3>
+  <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:mb-4">
+    <h3 class="text-2xl font-black text-slate-900">Grade de Horários</h3>
+    <label class="flex items-center gap-2 text-xs font-bold uppercase text-slate-500 print:hidden">
+      Turno
+      <select onchange="actions.setScheduleListTurno(this.value)" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700">
+        <option value="todos" ${scheduleListTurno === 'todos' ? 'selected' : ''}>Todos</option>
+        <option value="manha" ${scheduleListTurno === 'manha' ? 'selected' : ''}>Manhã</option>
+        <option value="tarde" ${scheduleListTurno === 'tarde' ? 'selected' : ''}>Tarde</option>
+        <option value="noite" ${scheduleListTurno === 'noite' ? 'selected' : ''}>Noite</option>
+      </select>
+    </label>
+  </div>
   <div class="bg-white rounded-3xl border overflow-hidden shadow-sm print:border-none print:shadow-none">
     <div class="overflow-x-auto pr-2">
-      <table class="w-full text-left min-w-[700px]">
+      <table class="w-full text-left min-w-[800px]">
       <thead class="bg-slate-50 text-[10px] font-black text-slate-400 uppercase border-b">
         <tr>
           <th class="px-8 py-5">Matéria</th>
+          <th class="px-8 py-5">Turno</th>
           <th class="px-8 py-5">Horário / Data</th>
           <th class="px-8 py-5">Professor</th>
           <th class="px-8 py-5 text-center">Status</th>
@@ -2020,9 +2092,10 @@ const HorariosTab = () => `
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-50">
-        ${schedules.map(s => `
+        ${filterSchedulesByTurno(schedules, scheduleListTurno).map(s => `
           <tr class="hover:bg-slate-50 transition-all">
             <td class="px-8 py-5 font-bold">${s.subject}</td>
+            <td class="px-8 py-5 text-xs font-black uppercase text-slate-500">${TURNO_LABELS[getScheduleTurno(s)]}</td>
             <td class="px-8 py-5">
               <div class="text-sm font-bold">${s.startTime}</div>
               <div class="text-[10px] text-slate-400 uppercase font-bold">${s.date}</div>
@@ -2259,6 +2332,7 @@ const RelatoriosTab = () => {
       }
     });
   }
+  filteredSchedules = filterSchedulesByTurno(filteredSchedules, reportTurno);
   const slots = getDetectedSlots(filteredSchedules);
 
   let displayTeachers = teachers;
@@ -2367,7 +2441,7 @@ const RelatoriosTab = () => {
 
       <!-- Control Box -->
       <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4 print:hidden">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div class="space-y-2">
             <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Nome do Colégio</label>
             <input type="text" value="${schoolName}" oninput="actions.setSchoolName(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
@@ -2378,6 +2452,16 @@ const RelatoriosTab = () => {
             <select onchange="actions.setReportWeek(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
               <option value="all" ${reportWeek === 'all' ? 'selected' : ''}>Todas as semanas (Geral Acumulada)</option>
               ${weeks.map(w => `<option value="${w}" ${reportWeek === w ? 'selected' : ''}>${getWeekRangeLabel(w)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-[10px] font-black text-slate-400 uppercase tracking-wider">Turno</label>
+            <select onchange="actions.setReportTurno(this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 outline-none font-medium text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+              <option value="todos" ${reportTurno === 'todos' ? 'selected' : ''}>Todos</option>
+              <option value="manha" ${reportTurno === 'manha' ? 'selected' : ''}>Manhã</option>
+              <option value="tarde" ${reportTurno === 'tarde' ? 'selected' : ''}>Tarde</option>
+              <option value="noite" ${reportTurno === 'noite' ? 'selected' : ''}>Noite</option>
             </select>
           </div>
 
@@ -2437,7 +2521,7 @@ const RelatoriosTab = () => {
           <div class="text-center md:text-right">
             <h4 class="text-sm font-black text-slate-800 uppercase tracking-wide">${schoolName}</h4>
             <p class="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mt-1">
-              ${reportModel === 'turma_grid' ? 'Relatório de Turmas (Individual)' : 'Relatório de Professores (Individual)'} - ${reportWeek === 'all' ? 'Grade Geral Acumulada' : getWeekRangeLabel(reportWeek)}
+              ${reportModel === 'turma_grid' ? 'Relatório de Turmas (Individual)' : 'Relatório de Professores (Individual)'} - ${reportWeek === 'all' ? 'Grade Geral Acumulada' : getWeekRangeLabel(reportWeek)} - ${reportTurno === 'todos' ? 'Todos os turnos' : TURNO_LABELS[reportTurno]}
             </p>
           </div>
         </div>
@@ -2548,11 +2632,35 @@ const actions = {
     }
   },
 
+  setScheduleTurno(turno) {
+    const periodOptions = $('#form-period-options');
+    if (periodOptions) periodOptions.innerHTML = SchedulePeriodOptions(turno);
+  },
+
+  setPeriodAdminTurno(turno) {
+    periodAdminTurno = turno;
+  },
+
+  setScheduleListTurno(turno) {
+    scheduleListTurno = turno;
+    this.renderCurrentView();
+  },
+
+  setTeacherTurno(turno) {
+    teacherTurno = turno;
+    this.renderCurrentView();
+  },
+
   switchTabMobile(tab) {
     if (!TAB_ACCESS[user?.role]?.includes(tab)) return;
     currentTab = tab;
     mobileMenuOpen = false;
     this.init();
+  },
+
+  setReportTurno(val) {
+    reportTurno = val;
+    this.renderCurrentView();
   },
 
   renderCurrentView() {
@@ -2666,12 +2774,20 @@ const actions = {
 
   async saveSchoolPeriod(event) {
     event.preventDefault();
-    const periodNumber = Math.max(0, ...schoolPeriods.map(period => Number(period.periodNumber) || 0)) + 1;
-    if (periodNumber > 30) return showDialog('A escola já possui o limite de 30 períodos.');
+    const turno = $('#period-turno')?.value || periodAdminTurno;
+    periodAdminTurno = turno;
+    const maximumPeriods = turno === 'noite' ? 5 : 6;
+    const usedNumbers = new Set(schoolPeriods
+      .filter(period => period.turno === turno)
+      .map(period => Number(period.periodNumber)));
+    let periodNumber = 1;
+    while (usedNumbers.has(periodNumber) && periodNumber <= maximumPeriods) periodNumber += 1;
+    if (periodNumber > maximumPeriods) return showDialog(`O turno da ${TURNO_LABELS[turno].toLowerCase()} já possui o limite de ${maximumPeriods} aulas.`);
 
     try {
       await api.post('/api/school-periods', {
         periodNumber,
+        turno,
         name: $('#period-name')?.value?.trim(),
         startTime: $('#period-start')?.value,
         endTime: $('#period-end')?.value
@@ -2688,6 +2804,7 @@ const actions = {
     event.preventDefault();
     try {
       await api.patch(`/api/school-periods/${periodId}`, {
+        turno: schoolPeriods.find(period => period.id === periodId)?.turno,
         name: $(`#period-name-${periodId}`)?.value?.trim(),
         startTime: $(`#period-start-${periodId}`)?.value,
         endTime: $(`#period-end-${periodId}`)?.value
@@ -2729,6 +2846,7 @@ const actions = {
       $('#edit-form-class-group').value = s.classGroup || '';
       $('#edit-form-date').value = s.date || '';
       $('#edit-form-room').value = s.room || '';
+      $('#edit-form-turno').value = getScheduleTurno(s);
       $('#edit-form-start').value = s.startTime || '';
       $('#edit-form-end').value = s.endTime || '';
       $('#edit-form-teacher').value = s.teacherId || '';
@@ -2847,8 +2965,8 @@ const actions = {
       const columnsByResource = {
         users: ['uid', 'email', 'displayName', 'role', 'school_id', 'subject'],
         schools: ['id', 'name', 'createdAt'],
-        schedules: ['id', 'date', 'startTime', 'endTime', 'subject', 'room', 'teacherId', 'teacherName', 'classGroup', 'status', 'school_id'],
-        school_periods: ['id', 'school_id', 'periodNumber', 'name', 'startTime', 'endTime'],
+        schedules: ['id', 'date', 'startTime', 'endTime', 'subject', 'room', 'teacherId', 'teacherName', 'classGroup', 'turno', 'status', 'school_id'],
+        school_periods: ['id', 'school_id', 'turno', 'periodNumber', 'name', 'startTime', 'endTime'],
         lab_bookings: ['id', 'labId', 'teacherId', 'teacherName', 'date', 'startTime', 'endTime'],
         school_subjects: ['id', 'school_id', 'subject'],
         teacher_subjects: ['id', 'teacher_id', 'subject_id']
@@ -2981,6 +3099,7 @@ const actions = {
         endTime: s.endtime || s.endTime,
         subject: s.subject,
         room: s.room,
+        turno: s.turno,
         teacherId: s.teacherid || s.teacherId,
         teacherName: s.teachername || s.teacherName,
         classGroup: classGroup,
@@ -3240,6 +3359,7 @@ const actions = {
     e.preventDefault();
     const teacherSelect = $('#form-teacher');
     const mode = $('#form-schedule-mode')?.value || 'weekly';
+    const turno = $('#form-turno')?.value || 'manha';
     const periodNumbers = Array.from(document.querySelectorAll('input[name="form-period"]:checked'))
       .map(input => Number(input.value));
     if (periodNumbers.length === 0) return showDialog('Selecione pelo menos um período.');
@@ -3268,6 +3388,7 @@ const actions = {
       classGroup: $('#form-class-group').value.trim(),
       room: $('#form-room').value.trim(),
       teacherId: teacherSelect.value,
+      turno,
       startDate,
       endDate,
       weekdayNumbers,
@@ -3293,6 +3414,7 @@ const actions = {
       classGroup: $('#edit-form-class-group').value,
       date: $('#edit-form-date').value,
       room: $('#edit-form-room').value,
+      turno: $('#edit-form-turno').value,
       startTime: $('#edit-form-start').value,
       endTime: $('#edit-form-end').value,
       teacherId: teacherSelect.value,
@@ -3516,6 +3638,7 @@ const actions = {
         }
       });
     }
+    filteredSchedules = filterSchedulesByTurno(filteredSchedules, reportTurno);
 
     let currentDisplayTeachers = teachers;
     if (reportTeacher !== 'all') {
@@ -3603,7 +3726,7 @@ const actions = {
           <div class="text-right">
             <h4 class="text-xs font-black text-slate-800 uppercase tracking-wide">${schoolName}</h4>
             <p class="text-[9px] text-slate-400 font-extrabold uppercase tracking-widest mt-0.5">
-              ${isTurma ? 'Relatório de Turmas (Individual)' : 'Relatório de Professores (Individual)'} - ${reportWeek === 'all' ? 'Grade Geral Acumulada' : getWeekRangeLabel(reportWeek)}
+              ${isTurma ? 'Relatório de Turmas (Individual)' : 'Relatório de Professores (Individual)'} - ${reportWeek === 'all' ? 'Grade Geral Acumulada' : getWeekRangeLabel(reportWeek)} - ${reportTurno === 'todos' ? 'Todos os turnos' : TURNO_LABELS[reportTurno]}
             </p>
           </div>
         </div>

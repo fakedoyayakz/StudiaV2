@@ -80,6 +80,13 @@ const timeToMinutes = (value: string): number => {
 const doesTimeOverlap = (startA: string, endA: string, startB: string, endB: string): boolean =>
   timeToMinutes(startA) < timeToMinutes(endB) && timeToMinutes(endA) > timeToMinutes(startB);
 
+const getTurnoByStartTime = (time: string): 'manha' | 'tarde' | 'noite' => {
+  const minutes = timeToMinutes(time);
+  if (minutes >= 5 * 60 && minutes < 12 * 60) return 'manha';
+  if (minutes >= 12 * 60 && minutes < 18 * 60) return 'tarde';
+  return 'noite';
+};
+
 const sanitizeEmail = (email: string): string => {
   if (!email) return '';
   return email.trim().toLowerCase();
@@ -560,6 +567,10 @@ app.post('/api/schedules', async (req, res) => {
   const userInfo = await requireRole(req, res, ['dev', 'diretor']);
   if (!userInfo) return;
   const { date, startTime, endTime, subject, room, teacherId, teacherName, classGroup, school_id } = req.body;
+  const turno = req.body?.turno || (isValidTime(startTime) ? getTurnoByStartTime(startTime) : '');
+  if (!['manha', 'tarde', 'noite'].includes(turno)) {
+    return res.status(400).json({ error: 'Informe um turno válido para o horário.' });
+  }
   if (userInfo.role === 'diretor' && school_id && school_id !== userInfo.school_id) {
     return res.status(403).json({ error: 'Acesso negado' });
   }
@@ -588,6 +599,7 @@ app.post('/api/schedules', async (req, res) => {
     teacherid: teacherId,
     teachername: teacherName,
     classgroup: classGroup,
+    turno,
     status: 'pending',
     school_id: finalSchoolId
   }).select('id').single();
@@ -613,7 +625,11 @@ app.patch('/api/schedules/:id', async (req, res) => {
     }
   }
   const { status, date, startTime, endTime, subject, room, teacherId, teacherName, classGroup } = req.body;
-  const onlyStatus = status !== undefined && date === undefined && startTime === undefined && endTime === undefined && subject === undefined && room === undefined && teacherId === undefined && teacherName === undefined && classGroup === undefined;
+  const turno = req.body?.turno || (isValidTime(startTime) ? getTurnoByStartTime(startTime) : undefined);
+  if (turno !== undefined && !['manha', 'tarde', 'noite'].includes(turno)) {
+    return res.status(400).json({ error: 'Informe um turno válido para o horário.' });
+  }
+  const onlyStatus = status !== undefined && date === undefined && startTime === undefined && endTime === undefined && subject === undefined && room === undefined && teacherId === undefined && teacherName === undefined && classGroup === undefined && turno === undefined;
   const updates = onlyStatus
     ? { status, updatedAt: new Date().toISOString() }
     : {
@@ -626,6 +642,7 @@ app.patch('/api/schedules/:id', async (req, res) => {
         teacherid: teacherId,
         teachername: teacherName,
         classgroup: classGroup,
+        turno,
         updatedAt: new Date().toISOString()
       };
   const { error } = await supabase.from('schedules').update(updates).eq('id', req.params.id);
@@ -851,10 +868,11 @@ app.get('/api/school-periods', async (req, res) => {
 
   const { data, error } = await supabase
     .from('school_periods')
-    .select('id,school_id,period_number,name,start_time,end_time')
+    .select('id,school_id,turno,period_number,name,start_time,end_time')
     .eq('school_id', schoolId)
+    .order('turno', { ascending: true })
     .order('period_number', { ascending: true });
-  if (error) return res.status(500).json({ error: 'Erro ao buscar os períodos. Confira se a migração 009 foi aplicada no Supabase.' });
+  if (error) return res.status(500).json({ error: 'Erro ao buscar os períodos. Confira se as migrações 009 e 010 foram aplicadas no Supabase.' });
   res.json(transformKeys(data));
 });
 
@@ -865,20 +883,22 @@ app.post('/api/school-periods', async (req, res) => {
   if (!schoolId) return;
 
   const periodNumber = Number(req.body?.periodNumber);
+  const turno = req.body?.turno;
   const name = sanitizeString(req.body?.name || '');
   const startTime = req.body?.startTime;
   const endTime = req.body?.endTime;
-  if (!Number.isInteger(periodNumber) || periodNumber < 1 || periodNumber > 30 || !name || !isValidTime(startTime) || !isValidTime(endTime) || timeToMinutes(startTime) >= timeToMinutes(endTime)) {
+  const maximumPeriods = turno === 'noite' ? 5 : 6;
+  if (!['manha', 'tarde', 'noite'].includes(turno) || !Number.isInteger(periodNumber) || periodNumber < 1 || periodNumber > maximumPeriods || !name || !isValidTime(startTime) || !isValidTime(endTime) || timeToMinutes(startTime) >= timeToMinutes(endTime)) {
     return res.status(400).json({ error: 'Informe nome, ordem e um intervalo de horário válido para o período.' });
   }
 
   const { data: existingPeriods, error: existingError } = await supabase
     .from('school_periods')
-    .select('period_number,start_time,end_time')
-    .eq('school_id', schoolId);
+    .select('turno,period_number,start_time,end_time')
+    .eq('school_id', schoolId)
+    .eq('turno', turno);
   if (existingError) return res.status(500).json({ error: 'Erro ao validar os períodos existentes.' });
   const overlap = (existingPeriods || []).find(period =>
-    period.period_number !== periodNumber &&
     doesTimeOverlap(startTime, endTime, period.start_time, period.end_time)
   );
   if (overlap) return res.status(409).json({ error: `Este horário se sobrepõe ao período ${overlap.period_number}.` });
@@ -886,10 +906,10 @@ app.post('/api/school-periods', async (req, res) => {
   const { data, error } = await supabase
     .from('school_periods')
     .upsert(
-      { school_id: schoolId, period_number: periodNumber, name, start_time: startTime, end_time: endTime },
-      { onConflict: 'school_id,period_number' }
+      { school_id: schoolId, turno, period_number: periodNumber, name, start_time: startTime, end_time: endTime },
+      { onConflict: 'school_id,turno,period_number' }
     )
-    .select('id,school_id,period_number,name,start_time,end_time')
+    .select('id,school_id,turno,period_number,name,start_time,end_time')
     .single();
   if (error) return res.status(500).json({ error: 'Erro ao salvar o período.' });
   res.json(transformKeys(data));
@@ -905,7 +925,7 @@ app.patch('/api/school-periods/:id', async (req, res) => {
 
   const { data: current, error: currentError } = await supabase
     .from('school_periods')
-    .select('id,period_number')
+    .select('id,period_number,turno')
     .eq('id', periodId)
     .eq('school_id', schoolId)
     .maybeSingle();
@@ -913,16 +933,30 @@ app.patch('/api/school-periods/:id', async (req, res) => {
   if (!current) return res.status(404).json({ error: 'Período não encontrado nesta escola.' });
 
   const name = sanitizeString(req.body?.name || '');
+  const turno = req.body?.turno;
   const startTime = req.body?.startTime;
   const endTime = req.body?.endTime;
-  if (!name || !isValidTime(startTime) || !isValidTime(endTime) || timeToMinutes(startTime) >= timeToMinutes(endTime)) {
+  const maximumPeriods = turno === 'noite' ? 5 : 6;
+  if (!['manha', 'tarde', 'noite'].includes(turno) || current.period_number > maximumPeriods || !name || !isValidTime(startTime) || !isValidTime(endTime) || timeToMinutes(startTime) >= timeToMinutes(endTime)) {
     return res.status(400).json({ error: 'Informe nome e um intervalo de horário válido para o período.' });
   }
+
+  const { data: sameNumber, error: numberError } = await supabase
+    .from('school_periods')
+    .select('id')
+    .eq('school_id', schoolId)
+    .eq('turno', turno)
+    .eq('period_number', current.period_number)
+    .neq('id', periodId)
+    .maybeSingle();
+  if (numberError) return res.status(500).json({ error: 'Erro ao verificar a ordem do período.' });
+  if (sameNumber) return res.status(409).json({ error: `Já existe a ${current.period_number}ª aula no turno da ${turno}.` });
 
   const { data: otherPeriods, error: otherError } = await supabase
     .from('school_periods')
     .select('period_number,start_time,end_time')
     .eq('school_id', schoolId)
+    .eq('turno', turno)
     .neq('id', periodId);
   if (otherError) return res.status(500).json({ error: 'Erro ao validar os períodos existentes.' });
   const overlap = (otherPeriods || []).find(period => doesTimeOverlap(startTime, endTime, period.start_time, period.end_time));
@@ -930,10 +964,10 @@ app.patch('/api/school-periods/:id', async (req, res) => {
 
   const { data, error } = await supabase
     .from('school_periods')
-    .update({ name, start_time: startTime, end_time: endTime })
+    .update({ turno, name, start_time: startTime, end_time: endTime })
     .eq('id', periodId)
     .eq('school_id', schoolId)
-    .select('id,school_id,period_number,name,start_time,end_time')
+    .select('id,school_id,turno,period_number,name,start_time,end_time')
     .single();
   if (error) return res.status(500).json({ error: 'Erro ao atualizar o período.' });
   res.json(transformKeys(data));
@@ -962,11 +996,15 @@ app.post('/api/schedules/recurring', async (req, res) => {
   if (!userInfo) return;
   if (!userInfo.school_id) return res.status(400).json({ error: 'Associe sua conta a uma escola antes de criar horários.' });
 
-  const { startDate, endDate, weekdayNumbers, periodNumbers } = req.body || {};
+  const { startDate, endDate, weekdayNumbers, periodNumbers, turno } = req.body || {};
   const subject = sanitizeString(req.body?.subject || '');
   const classGroup = sanitizeString(req.body?.classGroup || '');
   const room = sanitizeString(req.body?.room || '');
   const teacherId = typeof req.body?.teacherId === 'string' ? req.body.teacherId : '';
+  const maximumPeriods = turno === 'noite' ? 5 : 6;
+  if (!['manha', 'tarde', 'noite'].includes(turno)) {
+    return res.status(400).json({ error: 'Selecione um turno válido.' });
+  }
   if (!isValidDateOnly(startDate) || !isValidDateOnly(endDate) || startDate > endDate) {
     return res.status(400).json({ error: 'Informe um intervalo de datas válido.' });
   }
@@ -979,7 +1017,8 @@ app.post('/api/schedules/recurring', async (req, res) => {
   }
   if (!Array.isArray(periodNumbers) || periodNumbers.length === 0 ||
       periodNumbers.some(period => !Number.isInteger(period) || period < 1 || period > 30) ||
-      new Set(periodNumbers).size !== periodNumbers.length || periodNumbers.length > 10) {
+      new Set(periodNumbers).size !== periodNumbers.length || periodNumbers.length > maximumPeriods ||
+      periodNumbers.some(period => period > maximumPeriods)) {
     return res.status(400).json({ error: 'Selecione ao menos um período válido.' });
   }
   if (!subject || !classGroup || !room || !teacherId) {
@@ -995,6 +1034,7 @@ app.post('/api/schedules/recurring', async (req, res) => {
     .from('school_periods')
     .select('period_number,name,start_time,end_time')
     .eq('school_id', userInfo.school_id)
+    .eq('turno', turno)
     .in('period_number', periodNumbers)
     .order('period_number', { ascending: true });
   if (periodsError) return res.status(500).json({ error: 'Erro ao buscar os períodos da escola.' });
@@ -1026,6 +1066,7 @@ app.post('/api/schedules/recurring', async (req, res) => {
         teachername: teacher.displayname || '',
         classgroup: classGroup,
         status: 'pending',
+        turno,
         school_id: userInfo.school_id!
       }));
     }
@@ -1157,8 +1198,8 @@ app.get('/api/dev/export/:resource', async (req, res) => {
   const exportFields = {
     users: 'uid,email,displayname,role,school_id,subject',
     schools: 'id,name,createdat',
-    schedules: 'id,date,starttime,endtime,subject,room,teacherid,teachername,classgroup,status,school_id',
-    school_periods: 'id,school_id,period_number,name,start_time,end_time',
+    schedules: 'id,date,starttime,endtime,subject,room,teacherid,teachername,classgroup,turno,status,school_id',
+    school_periods: 'id,school_id,turno,period_number,name,start_time,end_time',
     lab_bookings: 'id,labid,teacherid,teachername,date,starttime,endtime',
     school_subjects: 'id,school_id,subject',
     teacher_subjects: 'id,teacher_id,subject_id'

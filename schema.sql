@@ -1,6 +1,6 @@
 -- Studia Schema
--- This is the base schema. Apply migrations/001 through migrations/009 in order
--- to reach the current multi-school schema, subject catalog, and school periods.
+-- This is the base schema. Apply migrations/001 through migrations/010 in order
+-- to reach the current multi-school schema, subject catalog, periods, and shifts.
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   teacherId UUID NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
   teacherName TEXT NOT NULL,
   classGroup TEXT,
+  turno TEXT NOT NULL DEFAULT 'manha' CHECK (turno IN ('manha', 'tarde', 'noite')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'absent')),
   updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -45,6 +46,22 @@ CREATE TABLE IF NOT EXISTS lab_bookings (
   date TEXT NOT NULL,
   startTime TIME NOT NULL,
   endTime TIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS school_periods (
+  id BIGSERIAL PRIMARY KEY,
+  school_id UUID NOT NULL REFERENCES schools(id) ON DELETE CASCADE,
+  turno TEXT NOT NULL CHECK (turno IN ('manha', 'tarde', 'noite')),
+  period_number INTEGER NOT NULL CHECK (period_number BETWEEN 1 AND 6),
+  name TEXT NOT NULL,
+  start_time TIME NOT NULL,
+  end_time TIME NOT NULL,
+  CONSTRAINT school_periods_valid_interval CHECK (end_time > start_time),
+  CONSTRAINT school_periods_turno_period_limit_check CHECK (
+    (turno IN ('manha', 'tarde') AND period_number <= 6)
+    OR (turno = 'noite' AND period_number <= 5)
+  ),
+  CONSTRAINT school_periods_school_turno_period_unique UNIQUE (school_id, turno, period_number)
 );
 
 -- Legacy storage retained for existing certificate records; the feature and API are disabled.
