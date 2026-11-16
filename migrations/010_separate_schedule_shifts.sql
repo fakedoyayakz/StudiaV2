@@ -33,10 +33,10 @@ ALTER TABLE schedules
 
 UPDATE schedules
 SET turno = CASE
-  WHEN substring(startTime from 1 for 5) >= '05:00'
-    AND substring(startTime from 1 for 5) < '12:00' THEN 'manha'
-  WHEN substring(startTime from 1 for 5) >= '12:00'
-    AND substring(startTime from 1 for 5) < '18:00' THEN 'tarde'
+  WHEN starttime::time >= TIME '05:00'
+    AND starttime::time < TIME '12:00' THEN 'manha'
+  WHEN starttime::time >= TIME '12:00'
+    AND starttime::time < TIME '18:00' THEN 'tarde'
   ELSE 'noite'
 END
 WHERE turno IS NULL;
