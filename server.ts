@@ -631,7 +631,7 @@ app.patch('/api/schedules/:id', async (req, res) => {
   }
   const onlyStatus = status !== undefined && date === undefined && startTime === undefined && endTime === undefined && subject === undefined && room === undefined && teacherId === undefined && teacherName === undefined && classGroup === undefined && turno === undefined;
   const updates = onlyStatus
-    ? { status, updatedAt: new Date().toISOString() }
+    ? { status, updatedat: new Date().toISOString() }
     : {
         status,
         date,
@@ -643,7 +643,7 @@ app.patch('/api/schedules/:id', async (req, res) => {
         teachername: teacherName,
         classgroup: classGroup,
         turno,
-        updatedAt: new Date().toISOString()
+        updatedat: new Date().toISOString()
       };
   const { data: updatedSchedule, error } = await supabase
     .from('schedules')
@@ -651,7 +651,7 @@ app.patch('/api/schedules/:id', async (req, res) => {
     .eq('id', req.params.id)
     .select('id')
     .maybeSingle();
-  if (error) return res.status(500).json({ error: 'Erro ao atualizar horário' });
+  if (error) return res.status(500).json({ error: `Erro ao atualizar horário: ${error.message}` });
   if (!updatedSchedule) return res.status(404).json({ error: 'Horário não encontrado para edição.' });
   res.json({ status: 'success' });
 });
