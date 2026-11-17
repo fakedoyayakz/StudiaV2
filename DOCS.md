@@ -39,7 +39,7 @@ Sidebar escura, 6 abas (as 5 de `DiretorView` + uma exclusiva):
 Sidebar clara, 5 abas:
 - **Horários** (`HorariosTab`): tabela com todos os horários cadastrados (todas as turmas/professores), com botões de editar e excluir por linha, e botão "Novo Horário" no header.
 - **Laboratórios** (`LabsTab`): agenda escolar com filtros por data, laboratório e professor; reservas sobrepostas são rejeitadas.
-- **Matérias** (`MateriasEscolaTab`): gerencia o catálogo de matérias da escola em uma aba separada; também está disponível para o desenvolvedor.
+- **Matérias** (`MateriasEscolaTab`): gerencia o catálogo de matérias da escola em uma aba separada; permite adicionar e excluir cada matéria individualmente e também está disponível para o desenvolvedor.
 - **Usuários** (`UsersTab({ viewerRole: 'diretor' })`): lista diretores e professores (contas `admin` ficam ocultas aqui, só aparecem na visão do admin), com exclusão de conta e — via o dropdown de perfil — alteração de cargo entre `teacher`/`diretor` (nunca `admin`; exceto o próprio usuário logado, que não pode trocar o próprio cargo).
 - **Relatórios** (`RelatoriosTab`): geração de grade em PDF (por professor ou por turma) e gráfico de frequência.
 

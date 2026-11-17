@@ -1840,8 +1840,9 @@ const TeacherSubjectAssignments = ({ viewerRole }) => {
             <div class="rounded-2xl border border-slate-200 p-4">
               <div class="flex items-center justify-between gap-3">
                 <h5 class="font-black text-slate-800">${subject.subject}</h5>
-                <button type="button" onclick="actions.deleteSchoolSubject('${subject.id}', '${subject.subject.replace(/'/g, "\\'")}')" class="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600" aria-label="Excluir matéria ${subject.subject}" title="Excluir matéria">
+                <button type="button" onclick="actions.deleteSchoolSubject(${subject.id})" class="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-500" aria-label="Excluir matéria ${subject.subject}" title="Excluir matéria">
                   <i data-lucide="trash-2" class="h-4 w-4"></i>
+                  <span>Excluir</span>
                 </button>
               </div>
             </div>
@@ -2133,8 +2134,9 @@ const HorariosTab = () => `
             </td>
             <td class="px-8 py-5 text-right print:hidden">
               <div class="flex items-center justify-end gap-3">
-                <button onclick="actions.showEditModalById(${s.id})" class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500" title="Editar horário" aria-label="Editar horário">
+                <button type="button" onclick="actions.showEditModalById(${s.id})" class="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500" title="Editar horário">
                   <i data-lucide="pencil" class="w-4 h-4"></i>
+                  <span>Editar</span>
                 </button>
                 <button onclick="actions.showDeleteModal(${s.id})" class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-700 transition-colors hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500" title="Excluir horário" aria-label="Excluir horário">
                   <i data-lucide="trash-2" class="w-4 h-4"></i>
@@ -2854,25 +2856,31 @@ const actions = {
   },
 
   showEditModalById(id) {
-    const s = schedules.find(sched => sched.id === id);
-    if (!s) return;
+    const s = schedules.find(sched => String(sched.id) === String(id));
+    if (!s) {
+      showDialog('Não foi possível localizar este horário. Atualize a página e tente novamente.');
+      return;
+    }
     
     const modal = $('#edit-modal');
-    if (modal) {
-      $('#edit-form-id').value = s.id || '';
-      $('#edit-form-subject').value = s.subject || '';
-      $('#edit-form-class-group').value = s.classGroup || '';
-      $('#edit-form-date').value = s.date || '';
-      $('#edit-form-room').value = s.room || '';
-      $('#edit-form-turno').value = getScheduleTurno(s);
-      $('#edit-form-start').value = s.startTime ? String(s.startTime).slice(0, 5) : '';
-      $('#edit-form-end').value = s.endTime ? String(s.endTime).slice(0, 5) : '';
-      $('#edit-form-teacher').value = s.teacherId || '';
-      $('#edit-form-status').value = s.status || 'pending';
-      this.updateScheduleSubjectOptions(s.teacherId || '', s.subject || '', 'edit-form');
-      modal.classList.remove('hidden');
-      if (typeof lucide !== 'undefined') lucide.createIcons();
+    if (!modal) {
+      showDialog('O formulário de edição não está disponível nesta tela.');
+      return;
     }
+
+    $('#edit-form-id').value = s.id || '';
+    $('#edit-form-subject').value = s.subject || '';
+    $('#edit-form-class-group').value = s.classGroup || '';
+    $('#edit-form-date').value = s.date || '';
+    $('#edit-form-room').value = s.room || '';
+    $('#edit-form-turno').value = getScheduleTurno(s);
+    $('#edit-form-start').value = s.startTime ? String(s.startTime).slice(0, 5) : '';
+    $('#edit-form-end').value = s.endTime ? String(s.endTime).slice(0, 5) : '';
+    $('#edit-form-teacher').value = s.teacherId || '';
+    $('#edit-form-status').value = s.status || 'pending';
+    this.updateScheduleSubjectOptions(s.teacherId || '', s.subject || '', 'edit-form');
+    modal.classList.remove('hidden');
+    if (typeof lucide !== 'undefined') lucide.createIcons();
   },
 
   hideEditModal() {
@@ -3320,9 +3328,15 @@ const actions = {
     }
   },
 
-  async deleteSchoolSubject(subjectId, subjectName) {
+  async deleteSchoolSubject(subjectId) {
+    const subject = schoolSubjects.find(item => String(item.id) === String(subjectId));
+    if (!subject) {
+      showDialog('Não foi possível localizar essa matéria. Atualize a página e tente novamente.');
+      return;
+    }
+
     const confirmed = await showDialog(
-      `Excluir "${subjectName}" do catálogo? Os horários antigos serão mantidos, mas os vínculos com professores serão removidos.`,
+      `Excluir "${subject.subject}" do catálogo? Os horários antigos serão mantidos, mas os vínculos com professores serão removidos.`,
       { confirm: true, title: 'Excluir matéria' }
     );
     if (!confirmed) return;
@@ -3443,7 +3457,8 @@ const actions = {
     try {
       await api.patch(`/api/schedules/${id}`, data);
       this.hideEditModal();
-      this.init();
+      await this.init();
+      showDialog('Horário atualizado com sucesso.');
     } catch (err) {
       showDialog(err.message || 'Erro ao editar horário.');
     }

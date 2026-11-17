@@ -645,8 +645,14 @@ app.patch('/api/schedules/:id', async (req, res) => {
         turno,
         updatedAt: new Date().toISOString()
       };
-  const { error } = await supabase.from('schedules').update(updates).eq('id', req.params.id);
+  const { data: updatedSchedule, error } = await supabase
+    .from('schedules')
+    .update(updates)
+    .eq('id', req.params.id)
+    .select('id')
+    .maybeSingle();
   if (error) return res.status(500).json({ error: 'Erro ao atualizar horário' });
+  if (!updatedSchedule) return res.status(404).json({ error: 'Horário não encontrado para edição.' });
   res.json({ status: 'success' });
 });
 
@@ -1489,8 +1495,15 @@ app.delete('/api/school-subjects/:id', async (req, res) => {
     return res.status(403).json({ error: 'Acesso negado' });
   }
 
-  const { error } = await supabase.from('school_subjects').delete().eq('id', req.params.id);
+  const { data: deletedSubject, error } = await supabase
+    .from('school_subjects')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('school_id', subject.school_id)
+    .select('id')
+    .maybeSingle();
   if (error) return res.status(500).json({ error: 'Erro ao excluir matéria' });
+  if (!deletedSubject) return res.status(404).json({ error: 'Matéria não encontrada para exclusão.' });
   res.json({ status: 'success' });
 });
 
