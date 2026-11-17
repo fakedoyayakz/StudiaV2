@@ -32,7 +32,8 @@ Hierarquia (topo → base): `admin` (dono da plataforma) → `diretor` (direçã
 ### Admin (`AdminView`) — topo da hierarquia
 Sidebar escura, 6 abas (as 5 de `DiretorView` + uma exclusiva):
 - **Visão geral**: cartões com contagem de usuários, horários e reservas de laboratório, mais um painel de infraestrutura.
-- **Horários**, **Laboratórios**, **Relatórios**: componentes compartilhados com a visão da direção.
+- **Horários** (`HorariosTab`): o desenvolvedor pode editar e excluir horários individualmente; a remoção em lote continua exclusiva da direção.
+- **Laboratórios**, **Relatórios**: componentes compartilhados com a visão da direção.
 - **Usuários** (`UsersTab({ viewerRole: 'admin' })`): único lugar que lista **todas** as contas, incluindo outras contas `admin`; o dropdown de perfil oferece as 3 opções (`teacher`/`diretor`/`admin`) — é o único perfil que pode promover alguém a `admin`.
 
 ### Diretor (`DiretorView`) — direção de escola
