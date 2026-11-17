@@ -1693,12 +1693,14 @@ const DEVELOPER_NAV_ITEMS = [
   { id: 'dev_audit', icon: 'clipboard', label: 'Auditoria' },
   { id: 'dev_data', icon: 'database', label: 'Dados e backups' },
   { id: 'escolas', icon: 'building', label: 'Escolas' },
+  { id: 'materias', icon: 'book-open', label: 'Matérias' },
   { id: 'usuarios', icon: 'users', label: 'Usuários' },
 ];
 
 const DIRETOR_NAV_ITEMS = [
   { id: 'horarios', icon: 'calendar', label: 'Horários' },
   { id: 'labs', icon: 'test-tube', label: 'Laboratórios' },
+  { id: 'materias', icon: 'book-open', label: 'Matérias' },
   { id: 'usuarios', icon: 'users', label: 'Usuários' },
   { id: 'relatorios', icon: 'bar-chart', label: 'Relatórios' },
 ];
@@ -1732,6 +1734,7 @@ const DeveloperView = () => `
         ${currentTab === 'dev_audit' ? DeveloperAuditTab() : ''}
         ${currentTab === 'dev_data' ? DeveloperDataTab() : ''}
         ${currentTab === 'escolas' ? EscolasTab() : ''}
+        ${currentTab === 'materias' ? MateriasEscolaTab({ viewerRole: 'dev' }) : ''}
         ${currentTab === 'usuarios' ? UsersTab({ viewerRole: 'dev' }) : ''}
       </div>
     </main>
@@ -1780,6 +1783,7 @@ const DiretorView = () => `
       <div class="p-4 md:p-10 flex-1 overflow-y-auto space-y-6 md:space-y-8 print:p-0">
         ${currentTab === 'horarios' ? HorariosTab() : ''}
         ${currentTab === 'labs' ? LabsTab() : ''}
+        ${currentTab === 'materias' ? MateriasEscolaTab({ viewerRole: 'diretor' }) : ''}
         ${currentTab === 'usuarios' ? UsersTab({ viewerRole: 'diretor' }) : ''}
         ${currentTab === 'relatorios' ? RelatoriosTab() : ''}
       </div>
@@ -1848,6 +1852,16 @@ const TeacherSubjectAssignments = ({ viewerRole }) => {
   `;
 };
 
+const MateriasEscolaTab = ({ viewerRole }) => `
+  <div class="space-y-5">
+    <div>
+      <h3 class="text-2xl font-black text-slate-900">Matérias</h3>
+      <p class="mt-1 text-sm font-medium text-slate-500">Gerencie o catálogo de matérias e as matérias disponíveis para os professores.</p>
+    </div>
+    ${TeacherSubjectAssignments({ viewerRole })}
+  </div>
+`;
+
 const UsersTab = ({ viewerRole = 'diretor' } = {}) => {
   const canManageAllRoles = viewerRole === 'dev';
   const users = [...allUsers]
@@ -1892,8 +1906,6 @@ const UsersTab = ({ viewerRole = 'diretor' } = {}) => {
           </button>
         </div>
       ` : ''}
-
-      ${['dev', 'diretor'].includes(viewerRole) ? TeacherSubjectAssignments({ viewerRole }) : ''}
 
       <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         <div class="overflow-x-auto">
@@ -2623,8 +2635,8 @@ const slidesContent = [
 
 // --- ACTIONS ---
 const TAB_ACCESS = {
-  dev: ['overview', 'dev_health', 'dev_diagnostics', 'dev_logs', 'dev_audit', 'dev_data', 'escolas', 'usuarios'],
-  diretor: ['horarios', 'labs', 'usuarios', 'relatorios'],
+  dev: ['overview', 'dev_health', 'dev_diagnostics', 'dev_logs', 'dev_audit', 'dev_data', 'escolas', 'materias', 'usuarios'],
+  diretor: ['horarios', 'labs', 'materias', 'usuarios', 'relatorios'],
   teacher: ['horarios', 'labs', 'materias'],
 };
 
