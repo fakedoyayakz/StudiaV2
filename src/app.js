@@ -2136,7 +2136,7 @@ const HorariosTab = () => `
             </td>
             <td class="px-8 py-5 text-right print:hidden">
               <div class="flex items-center justify-end gap-3">
-                <button type="button" onclick="actions.showEditModalById(${s.id})" class="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500" title="Editar horário">
+                <button type="button" onclick="window.actions.showEditModalById('${s.id}')" class="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 text-xs font-bold text-blue-700 transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500" title="Editar horário">
                   <i data-lucide="pencil" class="w-4 h-4"></i>
                   <span>Editar</span>
                 </button>
@@ -2870,18 +2870,36 @@ const actions = {
       return;
     }
 
-    $('#edit-form-id').value = s.id || '';
-    $('#edit-form-subject').value = s.subject || '';
-    $('#edit-form-class-group').value = s.classGroup || '';
-    $('#edit-form-date').value = s.date || '';
-    $('#edit-form-room').value = s.room || '';
-    $('#edit-form-turno').value = getScheduleTurno(s);
-    $('#edit-form-start').value = s.startTime ? String(s.startTime).slice(0, 5) : '';
-    $('#edit-form-end').value = s.endTime ? String(s.endTime).slice(0, 5) : '';
-    $('#edit-form-teacher').value = s.teacherId || '';
-    $('#edit-form-status').value = s.status || 'pending';
+    const formFields = {
+      id: $('#edit-form-id'),
+      subject: $('#edit-form-subject'),
+      classGroup: $('#edit-form-class-group'),
+      date: $('#edit-form-date'),
+      room: $('#edit-form-room'),
+      turno: $('#edit-form-turno'),
+      start: $('#edit-form-start'),
+      end: $('#edit-form-end'),
+      teacher: $('#edit-form-teacher'),
+      status: $('#edit-form-status')
+    };
+    if (Object.values(formFields).some(field => !field)) {
+      showDialog('O formulário de edição está incompleto. Atualize a página e tente novamente.');
+      return;
+    }
+
+    formFields.id.value = s.id || '';
+    formFields.subject.value = s.subject || '';
+    formFields.classGroup.value = s.classGroup || '';
+    formFields.date.value = s.date || '';
+    formFields.room.value = s.room || '';
+    formFields.turno.value = getScheduleTurno(s);
+    formFields.start.value = s.startTime ? String(s.startTime).slice(0, 5) : '';
+    formFields.end.value = s.endTime ? String(s.endTime).slice(0, 5) : '';
+    formFields.teacher.value = s.teacherId || '';
+    formFields.status.value = s.status || 'pending';
     this.updateScheduleSubjectOptions(s.teacherId || '', s.subject || '', 'edit-form');
     modal.classList.remove('hidden');
+    formFields.subject.focus();
     if (typeof lucide !== 'undefined') lucide.createIcons();
   },
 
