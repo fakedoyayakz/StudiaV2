@@ -29,12 +29,8 @@ Hierarquia (topo → base): `admin` (dono da plataforma) → `diretor` (direçã
 
 > **Renomeação 2026-09-10**: o que antes era o cargo `developer` (console técnico à parte) virou o `admin` de topo, com todas as funcionalidades de `diretor` somadas às suas próprias. O que antes era o cargo `admin` (Direção de escola) virou `diretor`, mantendo exatamente as mesmas 5 abas/funcionalidades de antes, só com o nome do cargo trocado. Isso exige uma migração dos valores já gravados em `users.role` no Supabase — ver §9.3 antes de considerar essa renomeação "concluída em produção".
 
-### Admin (`AdminView`) — topo da hierarquia
-Sidebar escura, 6 abas (as 5 de `DiretorView` + uma exclusiva):
-- **Visão geral**: cartões com contagem de usuários, horários e reservas de laboratório, mais um painel de infraestrutura.
-- **Horários** (`HorariosTab`): o desenvolvedor pode editar e excluir horários individualmente; a remoção em lote continua exclusiva da direção.
-- **Laboratórios**, **Relatórios**: componentes compartilhados com a visão da direção.
-- **Usuários** (`UsersTab({ viewerRole: 'admin' })`): único lugar que lista **todas** as contas, incluindo outras contas `admin`; o dropdown de perfil oferece as 3 opções (`teacher`/`diretor`/`admin`) — é o único perfil que pode promover alguém a `admin`.
+### Desenvolvedor (`DeveloperView`) — console técnico
+Sidebar escura com as abas **Visão geral**, **Saúde do sistema**, **Diagnóstico**, **Logs de erros**, **Auditoria**, **Dados e backups**, **Escolas**, **Matérias** e **Usuários**. A edição de horários permanece disponível na aba **Horários** da direção, não no console do desenvolvedor.
 
 ### Diretor (`DiretorView`) — direção de escola
 Sidebar clara, 5 abas:

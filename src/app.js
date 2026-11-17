@@ -1687,7 +1687,6 @@ const MobileDrawer = ({ theme = 'light', sectionLabel, navItems, profile, drawer
 
 const DEVELOPER_NAV_ITEMS = [
   { id: 'overview', icon: 'activity', label: 'Visão geral' },
-  { id: 'horarios', icon: 'calendar', label: 'Horários' },
   { id: 'dev_health', icon: 'activity', label: 'Saúde do sistema' },
   { id: 'dev_diagnostics', icon: 'search', label: 'Diagnóstico' },
   { id: 'dev_logs', icon: 'file-text', label: 'Logs de erros' },
@@ -1729,7 +1728,6 @@ const DeveloperView = () => `
 
       <div class="p-4 md:p-10 flex-1 overflow-y-auto space-y-6 md:space-y-8 print:p-0">
         ${currentTab === 'overview' ? DeveloperOverviewTab() : ''}
-        ${currentTab === 'horarios' ? HorariosTab() : ''}
         ${currentTab === 'dev_health' ? DeveloperHealthTab() : ''}
         ${currentTab === 'dev_diagnostics' ? DeveloperDiagnosticsTab() : ''}
         ${currentTab === 'dev_logs' ? DeveloperLogsTab() : ''}
@@ -2641,7 +2639,7 @@ const slidesContent = [
 
 // --- ACTIONS ---
 const TAB_ACCESS = {
-  dev: ['overview', 'horarios', 'dev_health', 'dev_diagnostics', 'dev_logs', 'dev_audit', 'dev_data', 'escolas', 'materias', 'usuarios'],
+  dev: ['overview', 'dev_health', 'dev_diagnostics', 'dev_logs', 'dev_audit', 'dev_data', 'escolas', 'materias', 'usuarios'],
   diretor: ['horarios', 'labs', 'materias', 'usuarios', 'relatorios'],
   teacher: ['horarios', 'labs', 'materias'],
 };
