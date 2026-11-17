@@ -64,6 +64,7 @@ Nenhuma rota valida token/sessão do chamador — a API confia em quem fizer a r
 | `POST /api/schedules` | Cria horário com `status: 'pending'`. |
 | `POST /api/schedules/recurring` | Gera de uma vez as ocorrências para os dias, períodos e datas selecionados, rejeitando o lote inteiro em caso de conflito. |
 | `PATCH /api/schedules/:id` | Atualiza um horário. Se só `status` vier no corpo, atualiza somente o status; senão substitui todos os campos enviados. |
+| `DELETE /api/schedules?turno=manha\|tarde\|noite` | Remove os horários do turno indicado na escola da direção autenticada; sem turno, remove todos os horários dessa escola. |
 | `DELETE /api/schedules/:id` | Exclui um horário. |
 | `GET /api/stats` | Conta horários por status (`total`, `confirmed`, `absent`, `pending`). |
 | `GET /api/teachers` | Lista usuários com `role = 'teacher'`. |

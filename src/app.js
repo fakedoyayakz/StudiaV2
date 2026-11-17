@@ -2068,15 +2068,21 @@ const EscolasTab = () => `
 const HorariosTab = () => `
   <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between print:mb-4">
     <h3 class="text-2xl font-black text-slate-900">Grade de Horários</h3>
-    <label class="flex items-center gap-2 text-xs font-bold uppercase text-slate-500 print:hidden">
-      Turno
-      <select onchange="actions.setScheduleListTurno(this.value)" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700">
-        <option value="todos" ${scheduleListTurno === 'todos' ? 'selected' : ''}>Todos</option>
-        <option value="manha" ${scheduleListTurno === 'manha' ? 'selected' : ''}>Manhã</option>
-        <option value="tarde" ${scheduleListTurno === 'tarde' ? 'selected' : ''}>Tarde</option>
-        <option value="noite" ${scheduleListTurno === 'noite' ? 'selected' : ''}>Noite</option>
-      </select>
-    </label>
+    <div class="flex flex-wrap items-center gap-3 print:hidden">
+      <label class="flex items-center gap-2 text-xs font-bold uppercase text-slate-500">
+        Turno
+        <select onchange="actions.setScheduleListTurno(this.value)" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700">
+          <option value="todos" ${scheduleListTurno === 'todos' ? 'selected' : ''}>Todos</option>
+          <option value="manha" ${scheduleListTurno === 'manha' ? 'selected' : ''}>Manhã</option>
+          <option value="tarde" ${scheduleListTurno === 'tarde' ? 'selected' : ''}>Tarde</option>
+          <option value="noite" ${scheduleListTurno === 'noite' ? 'selected' : ''}>Noite</option>
+        </select>
+      </label>
+      <button onclick="actions.deleteAllSchedules()" class="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50" ${filterSchedulesByTurno(schedules, scheduleListTurno).length ? '' : 'disabled'}>
+        <i data-lucide="trash-2" class="h-4 w-4"></i>
+        Remover ${scheduleListTurno === 'todos' ? 'todos' : `do turno da ${TURNO_LABELS[scheduleListTurno]}`}
+      </button>
+    </div>
   </div>
   <div class="bg-white rounded-3xl border overflow-hidden shadow-sm print:border-none print:shadow-none">
     <div class="overflow-x-auto pr-2">
@@ -2115,10 +2121,10 @@ const HorariosTab = () => `
             </td>
             <td class="px-8 py-5 text-right print:hidden">
               <div class="flex items-center justify-end gap-3">
-                <button onclick="actions.showEditModalById(${s.id})" class="text-slate-300 hover:text-blue-600 transition-all cursor-pointer" title="Editar">
+                <button onclick="actions.showEditModalById(${s.id})" class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-500" title="Editar horário" aria-label="Editar horário">
                   <i data-lucide="pencil" class="w-4 h-4"></i>
                 </button>
-                <button onclick="actions.showDeleteModal(${s.id})" class="text-slate-300 hover:text-rose-500 transition-all cursor-pointer" title="Excluir">
+                <button onclick="actions.showDeleteModal(${s.id})" class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-700 transition-colors hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500" title="Excluir horário" aria-label="Excluir horário">
                   <i data-lucide="trash-2" class="w-4 h-4"></i>
                 </button>
               </div>
@@ -2300,8 +2306,8 @@ const LabsTab = () => {
                   <td class="px-5 py-4 text-sm font-semibold text-slate-700">${booking.labId === 'info' ? 'Informática' : 'Química'}</td>
                   <td class="px-5 py-4 text-sm font-semibold text-slate-700">${booking.teacherName}</td>
                   <td class="px-5 py-4 text-center">
-                    ${user.role === 'diretor' || booking.teacherId === user.uid ? `
-                      <button onclick="actions.deleteLabBooking(${booking.id})" class="inline-flex items-center text-slate-400 hover:text-rose-600" title="Cancelar reserva" aria-label="Cancelar reserva">
+                    ${user.role === 'dev' || user.role === 'diretor' || booking.teacherId === user.uid ? `
+                      <button onclick="actions.deleteLabBooking('${booking.id}')" class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-700 transition-colors hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500" title="Cancelar reserva" aria-label="Cancelar reserva">
                         <i data-lucide="trash-2" class="h-4 w-4"></i>
                       </button>
                     ` : '<span class="text-slate-300">-</span>'}
@@ -2847,8 +2853,8 @@ const actions = {
       $('#edit-form-date').value = s.date || '';
       $('#edit-form-room').value = s.room || '';
       $('#edit-form-turno').value = getScheduleTurno(s);
-      $('#edit-form-start').value = s.startTime || '';
-      $('#edit-form-end').value = s.endTime || '';
+      $('#edit-form-start').value = s.startTime ? String(s.startTime).slice(0, 5) : '';
+      $('#edit-form-end').value = s.endTime ? String(s.endTime).slice(0, 5) : '';
       $('#edit-form-teacher').value = s.teacherId || '';
       $('#edit-form-status').value = s.status || 'pending';
       this.updateScheduleSubjectOptions(s.teacherId || '', s.subject || '', 'edit-form');
@@ -3427,7 +3433,30 @@ const actions = {
       this.hideEditModal();
       this.init();
     } catch (err) {
-      showDialog('Erro ao editar horário.');
+      showDialog(err.message || 'Erro ao editar horário.');
+    }
+  },
+
+  async deleteAllSchedules() {
+    const visibleSchedules = filterSchedulesByTurno(schedules, scheduleListTurno);
+    if (visibleSchedules.length === 0) return;
+
+    const scope = scheduleListTurno === 'todos'
+      ? 'todos os horários da escola, de todos os turnos'
+      : `todos os horários da escola no turno da ${TURNO_LABELS[scheduleListTurno]}`;
+    const confirmed = await showDialog(
+      `Esta ação excluirá ${visibleSchedules.length} horário${visibleSchedules.length === 1 ? '' : 's'} (${scope}) e não poderá ser desfeita. Deseja continuar?`,
+      { confirm: true, title: 'Remover horários' }
+    );
+    if (!confirmed) return;
+
+    const query = scheduleListTurno === 'todos' ? '' : `?turno=${encodeURIComponent(scheduleListTurno)}`;
+    try {
+      const result = await api.delete(`/api/schedules${query}`);
+      await this.init();
+      showDialog(`${result.deleted} horário${result.deleted === 1 ? '' : 's'} removido${result.deleted === 1 ? '' : 's'}.`);
+    } catch (err) {
+      showDialog(err.message || 'Não foi possível remover os horários.');
     }
   },
 
@@ -3437,7 +3466,7 @@ const actions = {
         await api.delete(`/api/schedules/${id}`);
         this.init();
       } catch (err) {
-        showDialog('Erro ao excluir.');
+        showDialog(err.message || 'Erro ao excluir.');
       }
     }
   },
@@ -3482,10 +3511,11 @@ const actions = {
     if (await showDialog('Deseja realmente cancelar esta reserva de laboratório?', { confirm: true, title: 'Cancelar reserva' })) {
       try {
         await api.delete(`/api/labs/bookings/${id}`);
+        labBookings = labBookings.filter(booking => String(booking.id) !== String(id));
         await this.refreshData();
         this.init();
       } catch (err) {
-        showDialog('Erro ao excluir reserva.');
+        showDialog(err.message || 'Não foi possível cancelar a reserva.');
       }
     }
   },

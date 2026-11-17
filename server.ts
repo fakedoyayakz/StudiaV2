@@ -650,6 +650,27 @@ app.patch('/api/schedules/:id', async (req, res) => {
   res.json({ status: 'success' });
 });
 
+app.delete('/api/schedules', async (req, res) => {
+  const userInfo = await requireRole(req, res, ['diretor']);
+  if (!userInfo) return;
+  if (!userInfo.school_id) return res.status(400).json({ error: 'Associe sua conta a uma escola antes de remover horários.' });
+
+  const turno = req.query.turno;
+  if (turno !== undefined && !['manha', 'tarde', 'noite'].includes(String(turno))) {
+    return res.status(400).json({ error: 'Turno inválido.' });
+  }
+
+  let query = supabase
+    .from('schedules')
+    .delete({ count: 'exact' })
+    .eq('school_id', userInfo.school_id);
+  if (turno) query = query.eq('turno', String(turno));
+
+  const { error, count } = await query;
+  if (error) return res.status(500).json({ error: 'Não foi possível remover os horários da escola.' });
+  res.json({ status: 'success', deleted: count || 0 });
+});
+
 app.delete('/api/schedules/:id', async (req, res) => {
   const userInfo = await requireRole(req, res, ['dev', 'diretor']);
   if (!userInfo) return;
@@ -1336,8 +1357,9 @@ app.delete('/api/labs/bookings/:id', async (req, res) => {
   let deleteQuery = supabase.from('lab_bookings').delete().eq('id', req.params.id);
   if (userInfo.role !== 'dev') deleteQuery = deleteQuery.eq('school_id', userInfo.school_id);
   if (userInfo.role === 'teacher') deleteQuery = deleteQuery.eq('teacherid', userInfo.uid);
-  const { error } = await deleteQuery;
+  const { data: deletedBooking, error } = await deleteQuery.select('id').maybeSingle();
   if (error) return res.status(500).json({ error: 'Erro ao excluir reserva' });
+  if (!deletedBooking) return res.status(404).json({ error: 'A reserva não foi excluída. Atualize a agenda e tente novamente.' });
   res.json({ status: 'success' });
 });
 
